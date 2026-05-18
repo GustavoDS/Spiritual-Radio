@@ -6,3 +6,9 @@ id = "brgglHj0qD-sLs4aRyNSL"
 uri = "file://radio-espiritual-api.tar.gz"
 type = "unspecified"
 title = "Rádio Espiritual — Código Fonte (tar.gz)"
+
+[[outputs]]
+id = "IHT0qULErVH--hZ2WQZxU"
+uri = "file://radio-espiritual-api.zip"
+type = "unspecified"
+title = "Rádio Espiritual — Código Fonte (.zip)"
