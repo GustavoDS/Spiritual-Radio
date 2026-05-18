@@ -10,7 +10,7 @@ router.get("/healthz", (_req, res) => {
 });
 
 router.get("/download-projeto", (_req, res) => {
-  const file = path.resolve("/home/runner/workspace/radio-espiritual-api.zip");
+  const file = path.resolve("/home/runner/workspace/radio-espiritual-standalone.zip");
   res.download(file, "radio-espiritual-api.zip");
 });
 
