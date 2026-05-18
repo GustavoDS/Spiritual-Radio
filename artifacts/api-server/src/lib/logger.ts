@@ -1,20 +1,22 @@
-import pino from "pino";
+import winston from "winston";
 
-const isProduction = process.env.NODE_ENV === "production";
+const { combine, timestamp, errors, json, colorize, printf } = winston.format;
 
-export const logger = pino({
-  level: process.env.LOG_LEVEL ?? "info",
-  redact: [
-    "req.headers.authorization",
-    "req.headers.cookie",
-    "res.headers['set-cookie']",
-  ],
-  ...(isProduction
-    ? {}
-    : {
-        transport: {
-          target: "pino-pretty",
-          options: { colorize: true },
-        },
-      }),
+const devFormat = combine(
+  colorize(),
+  timestamp({ format: "HH:mm:ss" }),
+  errors({ stack: true }),
+  printf(({ level, message, timestamp: ts, ...meta }) => {
+    const extra = Object.keys(meta).length ? ` ${JSON.stringify(meta)}` : "";
+    return `${ts} [${level}]: ${message}${extra}`;
+  }),
+);
+
+const prodFormat = combine(timestamp(), errors({ stack: true }), json());
+
+export const logger = winston.createLogger({
+  level: process.env["LOG_LEVEL"] ?? "info",
+  format: process.env["NODE_ENV"] === "development" ? devFormat : prodFormat,
+  transports: [new winston.transports.Console()],
+  exitOnError: false,
 });

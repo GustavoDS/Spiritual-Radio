@@ -1,0 +1,34 @@
+import { Model, DataTypes, type Sequelize } from "sequelize";
+
+export class Content extends Model {
+  declare id: number;
+  declare titulo: string;
+  declare tipo: string;
+  declare categoria_id: number | null;
+  declare audio_url: string | null;
+  declare imagem_url: string | null;
+  declare duracao: number | null;
+  declare tags: string[];
+  declare ativo: boolean;
+  declare channel_id: number | null;
+  declare createdAt: Date;
+  declare updatedAt: Date;
+}
+
+export function initContent(sequelize: Sequelize): void {
+  Content.init(
+    {
+      id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+      titulo: { type: DataTypes.STRING(500), allowNull: false },
+      tipo: { type: DataTypes.STRING(100), allowNull: false },
+      categoria_id: { type: DataTypes.INTEGER, allowNull: true, references: { model: "categories", key: "id" } },
+      audio_url: { type: DataTypes.TEXT, allowNull: true },
+      imagem_url: { type: DataTypes.TEXT, allowNull: true },
+      duracao: { type: DataTypes.INTEGER, allowNull: true, comment: "Duração em segundos" },
+      tags: { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: [], allowNull: false },
+      ativo: { type: DataTypes.BOOLEAN, defaultValue: true, allowNull: false },
+      channel_id: { type: DataTypes.INTEGER, allowNull: true, references: { model: "channels", key: "id" } },
+    },
+    { sequelize, modelName: "Content", tableName: "contents", timestamps: true },
+  );
+}
