@@ -1,0 +1,186 @@
+Faça uma auditoria técnica completa do projeto atual sem modificar nenhum código.
+
+Objetivo:
+Mapear exatamente o que já foi implementado antes de iniciar novas alterações.
+
+Gerar um relatório estruturado contendo:
+
+# 1. Estrutura do projeto
+
+Exibir árvore completa:
+
+src/
+├── modules/
+├── services/
+├── models/
+├── routes/
+├── middlewares/
+├── config/
+├── queues/
+├── jobs/
+├── utils/
+└── ...
+
+Informar função de cada pasta.
+
+---
+
+# 2. Dependências instaladas
+
+Listar:
+
+- dependências principais
+- versões
+- dependências de desenvolvimento
+
+Separar:
+
+Backend:
+- Express
+- Sequelize
+- Redis
+- BullMQ
+- JWT
+- Swagger
+- etc
+
+Frontend:
+- React
+- bibliotecas UI
+- autenticação
+- etc
+
+---
+
+# 3. Banco de dados
+
+Listar todas as entidades/tabelas existentes.
+
+Para cada tabela informar:
+
+Nome:
+
+Campos:
+- nome
+- tipo
+- obrigatório
+- default
+- chave primária
+- chave estrangeira
+
+Relacionamentos:
+
+Exemplo:
+
+Content
+→ pertence a Category
+→ pertence a Channel
+
+---
+
+# 4. APIs
+
+Listar todos os endpoints existentes.
+
+Formato:
+
+Método
+Rota
+Descrição
+Autenticação necessária?
+Parâmetros
+Body
+Resposta
+
+Exemplo:
+
+POST /auth/login
+
+Body:
+{
+ email,
+ password
+}
+
+Retorno:
+{
+ token,
+ user
+}
+
+---
+
+# 5. Serviços implementados
+
+Listar:
+
+- AiService
+- VoiceService
+- RadioService
+- ScheduleService
+- etc
+
+Informar responsabilidades de cada serviço.
+
+---
+
+# 6. Filas e Jobs
+
+Informar:
+
+- BullMQ configurado?
+- Redis configurado?
+- Jobs existentes
+- Workers existentes
+
+---
+
+# 7. Uploads e armazenamento
+
+Informar:
+
+- upload implementado?
+- multer?
+- local?
+- S3?
+- Cloudflare R2?
+
+---
+
+# 8. Segurança
+
+Informar:
+
+- JWT implementado?
+- bcrypt?
+- roles?
+- middlewares de autenticação?
+- rate limit?
+- validações?
+
+---
+
+# 9. Swagger
+
+Listar documentação gerada.
+
+---
+
+# 10. Recursos já concluídos
+
+Separar:
+
+Concluído
+Parcial
+Não implementado
+
+---
+
+# 11. Próximos passos recomendados
+
+Com base SOMENTE no estado atual do projeto.
+
+Não criar código.
+Não alterar nada.
+Não instalar nada.
+Apenas analisar e gerar relatório técnico completo.
