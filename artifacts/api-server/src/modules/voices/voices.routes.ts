@@ -3,9 +3,11 @@ import { authenticate, requireEditor, requireAdmin } from "../../middlewares/aut
 import { validate } from "../../middlewares/validate.js";
 import { getAll, getById, create, update, remove } from "./voices.controller.js";
 import { createVoiceSchema, updateVoiceSchema } from "../../validation/schemas.js";
+import { validateIntegerId } from "../../middlewares/validateId.js";
 
 const router = Router();
 
+router.param("id", validateIntegerId);
 router.use(authenticate);
 router.get("/", getAll);
 router.get("/:id", getById);

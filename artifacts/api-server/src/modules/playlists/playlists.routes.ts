@@ -3,9 +3,11 @@ import { authenticate, requireEditor } from "../../middlewares/auth.js";
 import { getAll, getById, create, update, remove } from "./playlists.controller.js";
 import { validate } from "../../middlewares/validate.js";
 import { createPlaylistSchema, updatePlaylistSchema } from "../../validation/schemas.js";
+import { validateIntegerId } from "../../middlewares/validateId.js";
 
 const router = Router();
 
+router.param("id", validateIntegerId);
 router.use(authenticate);
 router.get("/", getAll);
 router.get("/:id", getById);

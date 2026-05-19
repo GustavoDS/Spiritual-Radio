@@ -914,4 +914,28 @@ const options: swaggerJsdoc.Options = {
   apis: [],
 };
 
-export const swaggerSpec = swaggerJsdoc(options);
+const rawSpec = swaggerJsdoc(options) as {
+  paths?: Record<string, Record<string, { security?: unknown[]; responses?: Record<string, unknown> }>>;
+  components?: Record<string, unknown>;
+};
+
+/* Post-process: inject 401 response into every operation that carries security */
+if (rawSpec.paths) {
+  for (const methods of Object.values(rawSpec.paths)) {
+    for (const op of Object.values(methods)) {
+      if (op.security && op.security.length > 0) {
+        op.responses ??= {};
+        op.responses["401"] ??= {
+          description: "Não autorizado — token JWT ausente, inválido ou expirado",
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ErrorResponse" },
+            },
+          },
+        };
+      }
+    }
+  }
+}
+
+export const swaggerSpec = rawSpec;
