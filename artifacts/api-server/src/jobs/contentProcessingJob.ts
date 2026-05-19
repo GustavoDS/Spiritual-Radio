@@ -4,6 +4,7 @@ import { logger } from "../lib/logger.js";
 import { Voice } from "../models/index.js";
 import { runSynthesis } from "../services/VoiceService.js";
 import { Content } from "../models/index.js";
+import { realtimeService } from "../services/RealtimeService.js";
 
 export interface ContentProcessingJobData {
   contentId: number;
@@ -39,6 +40,13 @@ export function startContentProcessingWorker(): Worker {
             { where: { id: contentId } },
           );
           logger.info("Audio saved and content updated", { contentId, url });
+          realtimeService.broadcastAdmin("tts_completed", {
+            contentId,
+            voiceId,
+            audioUrl: url,
+            trigger: "content_processing",
+            ts: new Date().toISOString(),
+          });
         } else {
           logger.warn("Voice not found for content processing", { voiceId });
         }
@@ -51,9 +59,15 @@ export function startContentProcessingWorker(): Worker {
   );
 
   worker.on("completed", (job) => logger.info("Job completed", { jobId: job.id }));
-  worker.on("failed", (job, err) =>
-    logger.error("Job failed", { jobId: job?.id, err: err.message }),
-  );
+  worker.on("failed", (job, err) => {
+    logger.error("Job failed", { jobId: job?.id, err: err.message });
+    realtimeService.broadcastAdmin("tts_failed", {
+      jobId: job?.id,
+      trigger: "content_processing",
+      error: err.message,
+      ts: new Date().toISOString(),
+    });
+  });
   worker.on("error", (err) =>
     logger.warn("content-processing worker error (Redis unavailable?)", { err: err.message }),
   );
@@ -80,6 +94,13 @@ export function startVoiceSynthesisWorker(): Worker {
       if (contentId) {
         await Content.update({ audio_url: url }, { where: { id: contentId } });
         logger.info("Content audio_url updated", { contentId, url });
+      realtimeService.broadcastAdmin("tts_completed", {
+        contentId,
+        voiceId,
+        audioUrl: url,
+        trigger: "voice_synthesis",
+        ts: new Date().toISOString(),
+      });
       }
 
       await job.updateProgress(100);
@@ -88,9 +109,15 @@ export function startVoiceSynthesisWorker(): Worker {
   );
 
   worker.on("completed", (job) => logger.info("Voice synthesis completed", { jobId: job.id }));
-  worker.on("failed", (job, err) =>
-    logger.error("Voice synthesis failed", { jobId: job?.id, err: err.message }),
-  );
+  worker.on("failed", (job, err) => {
+    logger.error("Voice synthesis failed", { jobId: job?.id, err: err.message });
+    realtimeService.broadcastAdmin("tts_failed", {
+      jobId: job?.id,
+      trigger: "voice_synthesis",
+      error: err.message,
+      ts: new Date().toISOString(),
+    });
+  });
   worker.on("error", (err) =>
     logger.warn("voice-synthesis worker error (Redis unavailable?)", { err: err.message }),
   );

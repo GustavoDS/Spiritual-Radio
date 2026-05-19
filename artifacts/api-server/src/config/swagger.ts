@@ -1490,6 +1490,65 @@ const options: swaggerJsdoc.Options = {
           },
         },
       },
+      "/realtime/events": {
+        get: {
+          tags: ["Realtime"],
+          summary: "Stream de eventos Server-Sent Events (SSE)",
+          description: [
+            "Abre um stream SSE persistente. Sem token → eventos públicos. Com JWT válido (admin/editor) → todos os eventos.",
+            "",
+            "**Autenticação:** Como navegadores usando `EventSource` não suportam cabeçalhos customizados, o token pode ser passado via query string `?token=<JWT>`.",
+            "",
+            "**Eventos públicos:**",
+            "- `connected` — confirmação de conexão com `clientId`",
+            "- `current_track_changed` — faixa atual mudou `{ channelId, current, next, ts }`",
+            "- `next_track_changed` — próxima faixa mudou `{ channelId, next, ts }`",
+            "- `radio_online` — rádio voltou ao ar `{ channelId, ts }`",
+            "- `radio_offline` — rádio sem conteúdo `{ channelId, ts }`",
+            "- `playlist_updated` — playlist foi criada/regenerada `{ channelId, date, playlistId, ts }`",
+            "",
+            "**Eventos administrativos** (requer role admin ou editor):",
+            "- `message_received` — nova mensagem/contato `{ id, tipo, nome, assunto, prioridade, ts }`",
+            "- `prayer_urgent` — pedido de oração urgente/alto `{ id, nome, mensagem, prioridade, ts }`",
+            "- `tts_completed` — síntese TTS concluída `{ contentId, voiceId, audioUrl, trigger, ts }`",
+            "- `tts_failed` — síntese TTS falhou `{ contentId?, voiceId?, error, trigger, ts }`",
+            "- `ai_generation_completed` — geração de IA concluída `{ contentId, ts }`",
+            "- `ai_generation_failed` — geração de IA falhou `{ error, ts }`",
+            "- `playlist_regenerated` — playlist regenerada manualmente `{ playlistId, channelId, date, items, ts }`",
+            "- `schedule_executed` — job de schedule executou `{ trigger, channelId?, date, ts }`",
+            "- `radio_status_changed` — cache de rádio invalidado `{ channelId, reason, ts }`",
+            "- `queue_failed` — job de fila falhou `{ queue, jobId, error, ts }`",
+            "- `queue_recovered` — fila recuperada `{ queue, ts }`",
+            "- `system_warning` — alerta de sistema `{ message, ts }`",
+            "",
+            "**Limites:** 200 conexões simultâneas por servidor, 10 por IP. Heartbeat a cada 30s (`: ping`). Timeout após 90s sem atividade.",
+          ].join("\n"),
+          parameters: [
+            {
+              name: "token",
+              in: "query",
+              required: false,
+              schema: { type: "string" },
+              description: "JWT Bearer token para obter eventos administrativos (alternativa ao header Authorization)",
+            },
+          ],
+          responses: {
+            "200": {
+              description: "Stream SSE ativo",
+              content: {
+                "text/event-stream": {
+                  schema: {
+                    type: "string",
+                    description: "Fluxo de eventos no formato SSE: `id: <id>\\nevent: <tipo>\\ndata: <JSON>\\n\\n`",
+                    example: "id: lp9x2a\nevent: connected\ndata: {\"clientId\":\"uuid\",\"isAdmin\":false,\"ts\":\"2026-01-01T00:00:00.000Z\"}\n\nid: lp9x3b\nevent: current_track_changed\ndata: {\"channelId\":1,\"current\":{\"id\":5,\"titulo\":\"Tempo de Adoração\"},\"next\":{\"id\":6,\"titulo\":\"Devocional Matinal\"},\"ts\":\"2026-01-01T06:00:00.000Z\"}\n\n",
+                  },
+                },
+              },
+            },
+            "429": { description: "Limite de conexões SSE atingido" },
+          },
+        },
+      },
       "/admin/queues": {
         get: {
           tags: ["Admin"],

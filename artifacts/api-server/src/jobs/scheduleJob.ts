@@ -3,6 +3,7 @@ import { redisConnection } from "../config/redis.js";
 import { logger } from "../lib/logger.js";
 import { Channel } from "../models/index.js";
 import { playlistService } from "../services/PlaylistService.js";
+import { realtimeService } from "../services/RealtimeService.js";
 
 export interface ScheduleJobData {
   channelId?: number;
@@ -28,6 +29,12 @@ export function startScheduleWorker(): Worker {
           try {
             await playlistService.generatePlaylist(channel.id, date);
             logger.info("Schedule worker: playlist generated", { channelId: channel.id, date });
+            realtimeService.broadcastAdmin("schedule_executed", {
+              trigger: "cron",
+              channelId: channel.id,
+              date,
+              ts: new Date().toISOString(),
+            });
           } catch (err) {
             logger.error("Schedule worker: failed to generate playlist", {
               channelId: channel.id,

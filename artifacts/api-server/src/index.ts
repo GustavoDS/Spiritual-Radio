@@ -9,6 +9,8 @@ import { startScheduleWorker } from "./jobs/scheduleJob.js";
 import { startCleanupWorker } from "./jobs/cleanupJob.js";
 import { scheduleQueue, cleanupQueue } from "./queues/index.js";
 import { Channel, Playlist } from "./models/index.js";
+import { playlistService } from "./services/PlaylistService.js";
+import { realtimeService } from "./services/RealtimeService.js";
 import type { Worker } from "bullmq";
 import type { Server } from "node:http";
 
@@ -144,6 +146,44 @@ async function bootstrap(): Promise<void> {
     await connectDatabase();
     await syncDatabase();
     logger.info("Database synchronized");
+
+    realtimeService.startTrackWatcher(
+      async () => {
+        const channels = await Channel.findAll({ where: { ativo: true }, attributes: ["id"] });
+        return channels.map((c) => c.id);
+      },
+      async (channelId) => {
+        try {
+          const track = await playlistService.getCurrentTrack(channelId);
+          if (!track) return null;
+          const content = (track as unknown as { content: Record<string, unknown> | null }).content;
+          if (!content) return null;
+          return {
+            id: content["id"] as number,
+            titulo: content["titulo"] as string | undefined,
+            audioUrl: content["audio_url"] as string | undefined,
+            artworkUrl: content["artwork_url"] as string | undefined,
+          };
+        } catch {
+          return null;
+        }
+      },
+      async (channelId) => {
+        try {
+          const track = await playlistService.getNextTrack(channelId);
+          if (!track) return null;
+          const content = (track as unknown as { content: Record<string, unknown> | null }).content;
+          if (!content) return null;
+          return {
+            id: content["id"] as number,
+            titulo: content["titulo"] as string | undefined,
+          };
+        } catch {
+          return null;
+        }
+      },
+      60_000,
+    );
 
     let redisReady = false;
     try {

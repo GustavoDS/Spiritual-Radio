@@ -14,6 +14,7 @@ import { sequelize, Channel, Playlist, PlaylistItem, Content, Voice, ContactMess
 import { env } from "../../config/env.js";
 import type { ContactPrioridade } from "../../models/ContactMessage.js";
 import type { UpdatePriorityInput, RunNowInput, GenerateTtsInput } from "./admin-ops.validators.js";
+import { realtimeService } from "../../services/RealtimeService.js";
 
 async function safeQueueCount(queue: { getJobCounts: () => Promise<Record<string, number>> }): Promise<Record<string, number> | null> {
   try {
@@ -58,6 +59,19 @@ export async function regeneratePlaylist(req: Request, res: Response): Promise<v
     adminId: (req as Request & { user?: { id: number } }).user?.id,
   });
 
+  realtimeService.broadcastAdmin("playlist_regenerated", {
+    playlistId: id,
+    channelId: playlist.channel_id,
+    date: playlistData,
+    items: items.length,
+    ts: new Date().toISOString(),
+  });
+  realtimeService.broadcastPublic("playlist_updated", {
+    channelId: playlist.channel_id,
+    date: playlistData,
+    ts: new Date().toISOString(),
+  });
+
   ok(res, { playlistId: id, itemsGerados: items.length, data: playlistData }, "Playlist regenerada com sucesso");
 }
 
@@ -91,6 +105,14 @@ export async function runScheduleNow(req: Request, res: Response): Promise<void>
       logger.info("admin: schedule run-now executed inline", { channelId: ch.id, today, adminId });
     }
   }
+
+  realtimeService.broadcastAdmin("schedule_executed", {
+    trigger: "manual",
+    date: today,
+    channels: results.length,
+    adminId,
+    ts: new Date().toISOString(),
+  });
 
   created(res, { date: today, channels: results }, `Geração de playlists iniciada para ${results.length} canal(is)`);
 }
@@ -291,6 +313,13 @@ export async function generateContentTts(req: Request, res: Response): Promise<v
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error("admin: TTS provider error", { contentId, voiceId: voice.id, err: msg });
+    realtimeService.broadcastAdmin("tts_failed", {
+      contentId,
+      voiceId: voice.id,
+      trigger: "manual",
+      error: msg,
+      ts: new Date().toISOString(),
+    });
     res.status(502).json({ success: false, message: `Erro no provedor TTS: ${msg}` });
     return;
   }
@@ -302,6 +331,14 @@ export async function generateContentTts(req: Request, res: Response): Promise<v
   } catch { /* ignore cache invalidation failure */ }
 
   logger.info("admin: manual TTS generation complete", { contentId, voiceId: voice.id, url, adminId });
+
+  realtimeService.broadcastAdmin("tts_completed", {
+    contentId,
+    voiceId: voice.id,
+    audioUrl: url,
+    trigger: "manual",
+    ts: new Date().toISOString(),
+  });
 
   ok(res, {
     contentId,

@@ -5,6 +5,7 @@ import { playlistService } from "./PlaylistService.js";
 import { logger } from "../lib/logger.js";
 import { redis } from "../config/redis.js";
 import { env } from "../config/env.js";
+import { realtimeService } from "./RealtimeService.js";
 
 const CURRENT_CONTENT_KEY = "radio:current";
 const NEXT_CONTENT_KEY = "radio:next";
@@ -118,6 +119,11 @@ export class RadioService {
     const keys = [`${CURRENT_CONTENT_KEY}:${id}`, `${NEXT_CONTENT_KEY}:${id}`];
     await redis.del(...keys);
     logger.info("Radio cache invalidated", { channelId: id });
+    realtimeService.broadcastAdmin("radio_status_changed", {
+      channelId: id,
+      reason: "cache_invalidated",
+      ts: new Date().toISOString(),
+    });
   }
 }
 

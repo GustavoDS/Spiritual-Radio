@@ -4,6 +4,7 @@ import { listMessagesQuerySchema, respondSchema, updateStatusSchema } from "./me
 import { created, noContent, ok, paginated, badRequest } from "../../utils/response.js";
 import { logger } from "../../lib/logger.js";
 import type { ContactStatus } from "../../models/ContactMessage.js";
+import { realtimeService } from "../../services/RealtimeService.js";
 
 function getClientIp(req: Request): string | null {
   const forwarded = req.headers["x-forwarded-for"];
@@ -19,6 +20,14 @@ export async function submitContact(req: Request, res: Response): Promise<void> 
   const userAgent = (req.headers["user-agent"] ?? null) as string | null;
   const msg = await messageService.createContact(req.body as Parameters<typeof messageService.createContact>[0], ip, userAgent);
   logger.info("Contact message received", { id: msg.id, tipo: msg.tipo, ip });
+  realtimeService.broadcastAdmin("message_received", {
+    id: msg.id,
+    tipo: msg.tipo,
+    nome: msg.nome,
+    assunto: msg.assunto,
+    prioridade: msg.prioridade,
+    ts: new Date().toISOString(),
+  });
   created(res, { id: msg.id }, "Mensagem recebida com sucesso");
 }
 
@@ -27,6 +36,25 @@ export async function submitPrayerRequest(req: Request, res: Response): Promise<
   const userAgent = (req.headers["user-agent"] ?? null) as string | null;
   const msg = await messageService.createPrayerRequest(req.body as Parameters<typeof messageService.createPrayerRequest>[0], ip, userAgent);
   logger.info("Prayer request received", { id: msg.id, ip });
+  const prioridade = msg.prioridade as string;
+  if (prioridade === "urgente" || prioridade === "alta") {
+    realtimeService.broadcastAdmin("prayer_urgent", {
+      id: msg.id,
+      nome: msg.nome,
+      mensagem: (msg.mensagem as string).slice(0, 300),
+      prioridade: msg.prioridade,
+      ts: new Date().toISOString(),
+    });
+  } else {
+    realtimeService.broadcastAdmin("message_received", {
+      id: msg.id,
+      tipo: "pedido_oracao",
+      nome: msg.nome,
+      assunto: "Pedido de Oração",
+      prioridade: msg.prioridade,
+      ts: new Date().toISOString(),
+    });
+  }
   created(res, { id: msg.id }, "Pedido de oração recebido. Estaremos orando por você!");
 }
 

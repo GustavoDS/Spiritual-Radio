@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import { Schedule, Content, Channel, Playlist, PlaylistItem } from "../models/index.js";
 import { logger } from "../lib/logger.js";
 import { HttpError } from "../middlewares/errorHandler.js";
+import { realtimeService } from "./RealtimeService.js";
 
 function currentTimeStr(): string {
   const now = new Date();
@@ -33,6 +34,16 @@ export class PlaylistService {
       playlistId: playlist.id,
       created,
     });
+
+    if (created) {
+      realtimeService.broadcastPublic("playlist_updated", {
+        channelId,
+        date,
+        playlistId: playlist.id,
+        ts: new Date().toISOString(),
+      });
+    }
+
     return playlist;
   }
 
