@@ -391,7 +391,7 @@ const options: swaggerJsdoc.Options = {
         },
         post: {
           tags: ["Channels"],
-          summary: "Criar canal (editor+)",
+          summary: "Criar canal (admin only)",
           security: [{ bearerAuth: [] }],
           requestBody: {
             required: true,
@@ -414,8 +414,8 @@ const options: swaggerJsdoc.Options = {
       },
       "/channels/{id}": {
         get: { tags: ["Channels"], summary: "Buscar canal por ID", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Canal encontrado" }, "404": { description: "Não encontrado" } } },
-        put: { tags: ["Channels"], summary: "Atualizar canal (editor+)", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/Channel" } } } }, responses: { "200": { description: "Canal atualizado" } } },
-        delete: { tags: ["Channels"], summary: "Deletar canal (admin)", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "204": { description: "Canal removido" } } },
+        put: { tags: ["Channels"], summary: "Atualizar canal (admin only)", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], requestBody: { content: { "application/json": { schema: { $ref: "#/components/schemas/Channel" } } } }, responses: { "200": { description: "Canal atualizado" } } },
+        delete: { tags: ["Channels"], summary: "Deletar canal (admin only)", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "204": { description: "Canal removido" } } },
       },
       "/categories": {
         get: {
@@ -439,7 +439,7 @@ const options: swaggerJsdoc.Options = {
       "/categories/{id}": {
         get: { tags: ["Categories"], summary: "Buscar categoria", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "200": { description: "Categoria" }, "404": { description: "Não encontrada" } } },
         put: { tags: ["Categories"], summary: "Atualizar categoria (editor+)", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], requestBody: { content: { "application/json": { schema: { type: "object", properties: { nome: { type: "string" } } } } } }, responses: { "200": { description: "Categoria atualizada" } } },
-        delete: { tags: ["Categories"], summary: "Deletar categoria (admin)", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "204": { description: "Categoria removida" } } },
+        delete: { tags: ["Categories"], summary: "Deletar categoria (editor+)", security: [{ bearerAuth: [] }], parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }], responses: { "204": { description: "Categoria removida" } } },
       },
       "/contents": {
         get: {
@@ -513,6 +513,55 @@ const options: swaggerJsdoc.Options = {
             { name: "limit", in: "query", schema: { type: "integer", default: 50 } },
           ],
           responses: { "200": { description: "Lista de vozes TTS" } },
+        },
+        post: {
+          tags: ["Voices"],
+          summary: "Criar voz TTS (editor+)",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["nome", "provider"],
+                  properties: {
+                    nome: { type: "string", example: "Voz Feminina PT-BR" },
+                    voice_id_externo: { type: "string", example: "nova", description: "ID técnico no provedor TTS (openai: alloy/echo/nova/…, elevenlabs: ID da voz)" },
+                    provider: { type: "string", enum: ["openai", "elevenlabs"], example: "openai" },
+                    idioma: { type: "string", example: "pt-BR" },
+                    descricao: { type: "string" },
+                    ativo: { type: "boolean", default: true },
+                  },
+                },
+              },
+            },
+          },
+          responses: { "201": { description: "Voz criada" } },
+        },
+      },
+      "/voices/{id}": {
+        get: {
+          tags: ["Voices"],
+          summary: "Buscar voz por ID",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "200": { description: "Voz encontrada" }, "404": { description: "Não encontrada" } },
+        },
+        put: {
+          tags: ["Voices"],
+          summary: "Atualizar voz (editor+)",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: { content: { "application/json": { schema: { type: "object", properties: { nome: { type: "string" }, voice_id_externo: { type: "string" }, provider: { type: "string", enum: ["openai", "elevenlabs"] }, ativo: { type: "boolean" } } } } } },
+          responses: { "200": { description: "Voz atualizada" }, "404": { description: "Não encontrada" } },
+        },
+        delete: {
+          tags: ["Voices"],
+          summary: "Deletar voz (admin only)",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: { "204": { description: "Voz removida" }, "404": { description: "Não encontrada" } },
         },
       },
       "/schedule": {
