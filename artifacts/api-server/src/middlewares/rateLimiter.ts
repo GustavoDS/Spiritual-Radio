@@ -41,7 +41,6 @@ export const contactLimiter = rateLimit({
   limit: 5,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip ?? req.socket.remoteAddress ?? "unknown",
   message: { success: false, message: "Muitos envios em pouco tempo — tente novamente mais tarde" },
-  skip: (req) => process.env["NODE_ENV"] === "test",
+  skip: () => process.env["NODE_ENV"] === "test",
 });
