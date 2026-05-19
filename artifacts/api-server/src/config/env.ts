@@ -18,4 +18,8 @@ export const env = {
   aiProvider: (process.env["AI_PROVIDER"] ?? "openai") as "openai" | "anthropic" | "gemini" | "openrouter",
   aiApiKey: process.env["AI_API_KEY"] ?? "",
   aiModel: process.env["AI_MODEL"] ?? "",
+
+  ttsProvider: (process.env["TTS_PROVIDER"] ?? "openai") as "openai" | "elevenlabs",
+  ttsApiKey: process.env["TTS_API_KEY"] ?? "",
+  ttsModel: process.env["TTS_MODEL"] ?? "",
 };

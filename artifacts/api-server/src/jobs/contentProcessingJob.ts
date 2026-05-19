@@ -1,6 +1,9 @@
 import { Worker, type Job } from "bullmq";
 import { redisConnection } from "../config/redis.js";
 import { logger } from "../lib/logger.js";
+import { Voice } from "../models/index.js";
+import { runSynthesis } from "../services/VoiceService.js";
+import { Content } from "../models/index.js";
 
 export interface ContentProcessingJobData {
   contentId: number;
@@ -21,12 +24,24 @@ export function startContentProcessingWorker(): Worker {
   const worker = new Worker<ContentProcessingJobData>(
     "content-processing",
     async (job: Job<ContentProcessingJobData>) => {
-      logger.info("Processing content job", { jobId: job.id, data: job.data });
+      logger.info("Processing content job", { jobId: job.id, contentId: job.data.contentId });
 
-      const { contentId, generateVoice } = job.data;
+      const { contentId, generateVoice, voiceId, text } = job.data;
 
-      if (generateVoice && job.data.voiceId && job.data.text) {
-        logger.info("Queuing voice synthesis", { contentId });
+      if (generateVoice && voiceId && text) {
+        const voice = await Voice.findByPk(voiceId);
+        if (voice) {
+          logger.info("Starting voice synthesis via content worker", { contentId, voiceId });
+          const { filePath } = await runSynthesis(text, voice);
+
+          await Content.update(
+            { audio_url: filePath },
+            { where: { id: contentId } },
+          );
+          logger.info("Audio saved and content updated", { contentId, filePath });
+        } else {
+          logger.warn("Voice not found for content processing", { voiceId });
+        }
       }
 
       await job.updateProgress(100);
@@ -35,9 +50,7 @@ export function startContentProcessingWorker(): Worker {
     { connection: redisConnection, concurrency: 5 },
   );
 
-  worker.on("completed", (job) =>
-    logger.info("Job completed", { jobId: job.id }),
-  );
+  worker.on("completed", (job) => logger.info("Job completed", { jobId: job.id }));
   worker.on("failed", (job, err) =>
     logger.error("Job failed", { jobId: job?.id, err: err.message }),
   );
@@ -49,15 +62,29 @@ export function startVoiceSynthesisWorker(): Worker {
   const worker = new Worker<VoiceSynthesisJobData>(
     "voice-synthesis",
     async (job: Job<VoiceSynthesisJobData>) => {
-      logger.info("Processing voice synthesis", { jobId: job.id, data: job.data });
+      logger.info("Processing voice synthesis job", { jobId: job.id, voiceId: job.data.voiceId });
+
+      const { voiceId, text, contentId } = job.data;
+
+      const voice = await Voice.findByPk(voiceId);
+      if (!voice) {
+        throw new Error(`Voice ${voiceId} not found`);
+      }
+
+      const { filePath } = await runSynthesis(text, voice);
+      logger.info("Voice synthesis complete", { jobId: job.id, filePath });
+
+      if (contentId) {
+        await Content.update({ audio_url: filePath }, { where: { id: contentId } });
+        logger.info("Content audio_url updated", { contentId, filePath });
+      }
+
       await job.updateProgress(100);
     },
     { connection: redisConnection, concurrency: 2 },
   );
 
-  worker.on("completed", (job) =>
-    logger.info("Voice synthesis completed", { jobId: job.id }),
-  );
+  worker.on("completed", (job) => logger.info("Voice synthesis completed", { jobId: job.id }));
   worker.on("failed", (job, err) =>
     logger.error("Voice synthesis failed", { jobId: job?.id, err: err.message }),
   );
