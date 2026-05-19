@@ -35,3 +35,13 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
   message: { success: false, message: "Muitas tentativas de autenticação — aguarde antes de tentar novamente" },
 });
+
+export const contactLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip ?? req.socket.remoteAddress ?? "unknown",
+  message: { success: false, message: "Muitos envios em pouco tempo — tente novamente mais tarde" },
+  skip: (req) => process.env["NODE_ENV"] === "test",
+});

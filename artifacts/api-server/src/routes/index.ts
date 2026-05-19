@@ -12,6 +12,7 @@ import voicesRouter from "../modules/voices/voices.routes.js";
 import radioRouter from "../modules/radio/radio.routes.js";
 import aiRouter from "../modules/ai/ai.routes.js";
 import ttsRouter from "../modules/tts/tts.routes.js";
+import messagesRouter from "../modules/messages/messages.routes.js";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use("/voices", voicesRouter);
 router.use("/radio", radioRouter);
 router.use("/ai", aiRouter);
 router.use("/tts", ttsRouter);
+router.use("/admin/messages", messagesRouter);
 
 export default router;

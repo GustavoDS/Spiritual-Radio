@@ -1,0 +1,137 @@
+Implementar sistema completo de mensagens internas e pedidos de oração na API da Rádio Espiritual Inteligente.
+
+Objetivo:
+Substituir completamente qualquer fluxo baseado em e-mail por armazenamento e gerenciamento interno via API/admin.
+
+Arquitetura:
+Todas as mensagens devem ser persistidas no banco de dados e gerenciadas pelo painel administrativo.
+
+Implementar:
+
+1. Nova entidade: ContactMessage
+
+Campos:
+
+* id
+* nome
+* email (opcional)
+* telefone (opcional)
+* assunto
+* mensagem
+* tipo ENUM:
+
+  * contato
+  * pedido_oracao
+  * testemunho
+  * sugestao
+* status ENUM:
+
+  * novo
+  * em_analise
+  * respondido
+  * arquivado
+* prioridade ENUM:
+
+  * baixa
+  * normal
+  * alta
+  * urgente
+* canal_origem
+* ip
+* user_agent
+* resposta_admin
+* respondido_por
+* respondido_em
+* lido_em
+* createdAt
+* updatedAt
+
+2. Relacionamentos
+
+respondido_por → FK users.id
+
+3. Endpoints públicos
+
+POST /public/contact
+POST /public/prayer-request
+
+Requisitos:
+
+* sem autenticação
+* rate limit forte
+* validação Zod
+* proteção anti-spam
+* sanitização
+* salvar IP e user-agent
+
+4. Endpoints administrativos
+
+GET /admin/messages
+GET /admin/messages/:id
+PATCH /admin/messages/:id/status
+PATCH /admin/messages/:id/respond
+DELETE /admin/messages/:id
+
+Filtros:
+
+* status
+* tipo
+* prioridade
+* período
+* busca textual
+
+Paginação obrigatória.
+
+5. Dashboard admin
+
+Criar estatísticas:
+
+* mensagens novas
+* pedidos de oração
+* mensagens respondidas
+* mensagens pendentes
+* mensagens por período
+* mensagens por tipo
+
+6. Regras
+
+* contato comum → tipo contato
+* pedido oração → tipo pedido_oracao
+* nunca enviar e-mail
+* tudo deve ficar interno no sistema
+
+7. Segurança
+
+* rate limit dedicado
+* bloquear flood
+* limitar tamanho mensagem
+* sanitização XSS
+* logs de abuso
+
+8. Swagger
+
+Documentar todos endpoints novos.
+
+9. Estrutura
+
+Criar:
+
+* model ContactMessage
+* migration
+* module/messages
+* services/MessageService
+* validators Zod
+* controllers
+* routes públicas e admin
+
+10. Objetivo operacional
+
+O admin deve conseguir:
+
+* visualizar mensagens
+* responder
+* marcar status
+* acompanhar pedidos oração
+* organizar atendimento
+
+Tudo centralizado no painel.

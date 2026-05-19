@@ -7,6 +7,7 @@ import { Voice, initVoice } from "./Voice.js";
 import { Schedule, initSchedule } from "./Schedule.js";
 import { Playlist, initPlaylist } from "./Playlist.js";
 import { PlaylistItem, initPlaylistItem } from "./PlaylistItem.js";
+import { ContactMessage, initContactMessage } from "./ContactMessage.js";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -18,6 +19,7 @@ initVoice(sequelize);
 initSchedule(sequelize);
 initPlaylist(sequelize);
 initPlaylistItem(sequelize);
+initContactMessage(sequelize);
 
 Content.belongsTo(Category, { foreignKey: "categoria_id", as: "categoria", onDelete: "SET NULL" });
 Category.hasMany(Content, { foreignKey: "categoria_id", as: "contents" });
@@ -37,6 +39,9 @@ Playlist.hasMany(PlaylistItem, { foreignKey: "playlist_id", as: "items" });
 PlaylistItem.belongsTo(Content, { foreignKey: "content_id", as: "content", onDelete: "SET NULL" });
 Content.hasMany(PlaylistItem, { foreignKey: "content_id", as: "playlistItems" });
 
+ContactMessage.belongsTo(User, { foreignKey: "respondido_por", as: "respondente", onDelete: "SET NULL" });
+User.hasMany(ContactMessage, { foreignKey: "respondido_por", as: "respostas" });
+
 export async function syncDatabase(force = false): Promise<void> {
   if (env.nodeEnv === "production" && !env.syncDb) {
     logger.info("Production mode: skipping auto-sync — run migrations manually");
@@ -45,4 +50,4 @@ export async function syncDatabase(force = false): Promise<void> {
   await sequelize.sync({ force, alter: !force });
 }
 
-export { sequelize, User, Channel, Category, Content, Voice, Schedule, Playlist, PlaylistItem };
+export { sequelize, User, Channel, Category, Content, Voice, Schedule, Playlist, PlaylistItem, ContactMessage };

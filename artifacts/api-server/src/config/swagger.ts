@@ -120,6 +120,27 @@ const options: swaggerJsdoc.Options = {
             message: { type: "string" },
           },
         },
+        ContactMessage: {
+          type: "object",
+          properties: {
+            id: { type: "integer" },
+            nome: { type: "string" },
+            email: { type: "string", format: "email", nullable: true },
+            telefone: { type: "string", nullable: true },
+            assunto: { type: "string" },
+            mensagem: { type: "string" },
+            tipo: { type: "string", enum: ["contato", "pedido_oracao", "testemunho", "sugestao"] },
+            status: { type: "string", enum: ["novo", "em_analise", "respondido", "arquivado"] },
+            prioridade: { type: "string", enum: ["baixa", "normal", "alta", "urgente"] },
+            canal_origem: { type: "string", nullable: true },
+            resposta_admin: { type: "string", nullable: true },
+            respondido_por: { type: "integer", nullable: true },
+            respondido_em: { type: "string", format: "date-time", nullable: true },
+            lido_em: { type: "string", format: "date-time", nullable: true },
+            createdAt: { type: "string", format: "date-time" },
+            updatedAt: { type: "string", format: "date-time" },
+          },
+        },
       },
     },
     tags: [
@@ -136,6 +157,7 @@ const options: swaggerJsdoc.Options = {
       { name: "IA", description: "Geração de conteúdo com inteligência artificial" },
       { name: "TTS", description: "Síntese de voz (Text-to-Speech)" },
       { name: "Admin", description: "Administração de filas e workers" },
+      { name: "Mensagens", description: "Mensagens de contato e pedidos de oração" },
     ],
     paths: {
       "/auth/register": {
@@ -1002,6 +1024,200 @@ const options: swaggerJsdoc.Options = {
             "400": { description: "Texto ou voz inválidos" },
             "404": { description: "Voz não encontrada" },
             "503": { description: "TTS_API_KEY não configurado" },
+          },
+        },
+      },
+      "/public/contact": {
+        post: {
+          tags: ["Mensagens"],
+          summary: "Enviar mensagem de contato",
+          description: "Endpoint público — sem autenticação. Rate limit: 5 envios/hora por IP. Suporta tipos: contato, testemunho, sugestao.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["nome", "assunto", "mensagem"],
+                  properties: {
+                    nome: { type: "string", minLength: 2, maxLength: 255, example: "Maria Silva" },
+                    email: { type: "string", format: "email", example: "maria@exemplo.com" },
+                    telefone: { type: "string", maxLength: 50, example: "(11) 99999-9999" },
+                    assunto: { type: "string", minLength: 3, maxLength: 255, example: "Dúvida sobre o programa" },
+                    mensagem: { type: "string", minLength: 10, maxLength: 5000, example: "Gostaria de saber mais sobre..." },
+                    canal_origem: { type: "string", maxLength: 100, example: "site", description: "Canal de origem (site, app, widget, etc.)" },
+                    tipo: { type: "string", enum: ["contato", "testemunho", "sugestao"], default: "contato" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "Mensagem recebida com sucesso", content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } } },
+            "400": { description: "Dados inválidos", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "429": { description: "Muitos envios — aguarde antes de tentar novamente" },
+          },
+        },
+      },
+      "/public/prayer-request": {
+        post: {
+          tags: ["Mensagens"],
+          summary: "Enviar pedido de oração",
+          description: "Endpoint público — sem autenticação. Rate limit: 5 envios/hora por IP.",
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["nome", "mensagem"],
+                  properties: {
+                    nome: { type: "string", minLength: 2, maxLength: 255, example: "João da Silva" },
+                    email: { type: "string", format: "email", example: "joao@exemplo.com" },
+                    telefone: { type: "string", maxLength: 50, example: "(11) 98888-7777" },
+                    mensagem: { type: "string", minLength: 10, maxLength: 5000, example: "Peço oração pela cura da minha mãe..." },
+                    canal_origem: { type: "string", maxLength: 100, example: "app" },
+                    prioridade: { type: "string", enum: ["baixa", "normal", "alta", "urgente"], default: "normal" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "Pedido de oração recebido", content: { "application/json": { schema: { $ref: "#/components/schemas/Success" } } } },
+            "400": { description: "Dados inválidos", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+            "429": { description: "Muitos envios — aguarde antes de tentar novamente" },
+          },
+        },
+      },
+      "/admin/messages": {
+        get: {
+          tags: ["Mensagens"],
+          summary: "Listar mensagens e pedidos de oração (admin only)",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "status", in: "query", schema: { type: "string", enum: ["novo", "em_analise", "respondido", "arquivado"] } },
+            { name: "tipo", in: "query", schema: { type: "string", enum: ["contato", "pedido_oracao", "testemunho", "sugestao"] } },
+            { name: "prioridade", in: "query", schema: { type: "string", enum: ["baixa", "normal", "alta", "urgente"] } },
+            { name: "desde", in: "query", schema: { type: "string", format: "date" }, description: "Data início (YYYY-MM-DD)" },
+            { name: "ate", in: "query", schema: { type: "string", format: "date" }, description: "Data fim (YYYY-MM-DD)" },
+            { name: "q", in: "query", schema: { type: "string", maxLength: 200 }, description: "Busca textual em nome, assunto e mensagem" },
+            { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+            { name: "limit", in: "query", schema: { type: "integer", default: 20, maximum: 100 } },
+          ],
+          responses: {
+            "200": { description: "Lista paginada de mensagens", content: { "application/json": { schema: { $ref: "#/components/schemas/Paginated" } } } },
+          },
+        },
+      },
+      "/admin/messages/stats": {
+        get: {
+          tags: ["Mensagens"],
+          summary: "Estatísticas do painel de mensagens (admin only)",
+          security: [{ bearerAuth: [] }],
+          description: "Retorna totais por status e tipo, pedidos de oração, pendentes e volume dos últimos 7 dias.",
+          responses: {
+            "200": {
+              description: "Estatísticas",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          total: { type: "integer" },
+                          novas: { type: "integer" },
+                          pedidosOracao: { type: "integer" },
+                          respondidas: { type: "integer" },
+                          pendentes: { type: "integer" },
+                          ultimos7dias: { type: "integer" },
+                          porTipo: { type: "array", items: { type: "object" } },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/messages/{id}": {
+        get: {
+          tags: ["Mensagens"],
+          summary: "Buscar mensagem por ID (admin only) — marca como lida",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: {
+            "200": { description: "Mensagem encontrada", content: { "application/json": { schema: { allOf: [{ $ref: "#/components/schemas/Success" }, { type: "object", properties: { data: { $ref: "#/components/schemas/ContactMessage" } } }] } } } },
+            "404": { description: "Mensagem não encontrada" },
+          },
+        },
+        delete: {
+          tags: ["Mensagens"],
+          summary: "Deletar mensagem (admin only)",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: {
+            "204": { description: "Mensagem removida" },
+            "404": { description: "Mensagem não encontrada" },
+          },
+        },
+      },
+      "/admin/messages/{id}/status": {
+        patch: {
+          tags: ["Mensagens"],
+          summary: "Atualizar status da mensagem (admin only)",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["status"],
+                  properties: {
+                    status: { type: "string", enum: ["novo", "em_analise", "respondido", "arquivado"] },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Status atualizado" },
+            "400": { description: "Status inválido" },
+            "404": { description: "Mensagem não encontrada" },
+          },
+        },
+      },
+      "/admin/messages/{id}/respond": {
+        patch: {
+          tags: ["Mensagens"],
+          summary: "Registrar resposta do admin (admin only) — muda status para 'respondido'",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["resposta_admin"],
+                  properties: {
+                    resposta_admin: { type: "string", minLength: 5, maxLength: 10000, example: "Obrigado pela sua mensagem! Estaremos orando por você." },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Resposta registrada e status alterado para 'respondido'" },
+            "400": { description: "Resposta inválida" },
+            "404": { description: "Mensagem não encontrada" },
           },
         },
       },
