@@ -2,9 +2,21 @@ import rateLimit from "express-rate-limit";
 import { env } from "../config/env.js";
 
 /**
- * Rate limiters use in-memory store by default.
- * For horizontal scaling with Redis, configure a RedisStore here once
- * REDIS_URL is set to a reliable Redis instance.
+ * Rate limiters use in-memory store.
+ *
+ * To enable Redis-backed distributed rate limiting (recommended for
+ * multi-instance production), ensure Redis is available and uncomment
+ * the RedisStore block below. The rate-limit-redis package is already
+ * installed and ready to use.
+ *
+ * Example:
+ *   import { RedisStore } from "rate-limit-redis";
+ *   import { redis } from "../config/redis.js";
+ *   store: new RedisStore({
+ *     sendCommand: (...args: string[]) =>
+ *       redis.call(args[0]!, ...args.slice(1)) as Promise<number>,
+ *     prefix: "rl:global:",
+ *   }),
  */
 
 export const globalLimiter = rateLimit({

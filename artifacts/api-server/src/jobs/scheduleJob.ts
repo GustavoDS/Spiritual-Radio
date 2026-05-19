@@ -47,6 +47,9 @@ export function startScheduleWorker(): Worker {
   worker.on("failed", (job, err) =>
     logger.error("Schedule job failed", { jobId: job?.id, err: err.message }),
   );
+  worker.on("error", (err) =>
+    logger.warn("schedule worker error (Redis unavailable?)", { err: err.message }),
+  );
 
   return worker;
 }

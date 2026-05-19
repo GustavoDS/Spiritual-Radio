@@ -1,0 +1,219 @@
+Implementar correções finais bloqueadoras para colocar a API Rádio Espiritual Inteligente em estado de produção funcional.
+
+IMPORTANTE:
+
+- Não alterar arquitetura existente
+- Não remover funcionalidades
+- Não quebrar compatibilidade atual
+- Preservar endpoints
+- Preservar Swagger existente
+- Gerar relatório final
+
+==================================================
+1. CRON AUTOMÁTICO DA RÁDIO
+==================================================
+
+Objetivo:
+A rádio deve funcionar automaticamente 24h sem intervenção manual.
+
+Implementar:
+
+No bootstrap:
+
+scheduleQueue.add(
+  "daily-playlist-generation",
+  {},
+  {
+    repeat: {
+      pattern: "0 1 * * *"
+    }
+  }
+)
+
+Executar diariamente às 01:00.
+
+Fluxo:
+
+- buscar canais ativos
+- gerar playlist do dia seguinte
+- atualizar programação
+- registrar logs
+
+Garantir:
+
+- não duplicar playlists
+- tolerância a falhas
+- retry BullMQ
+- logs Winston
+
+Adicionar também:
+
+geração imediata na inicialização caso não exista playlist do dia atual.
+
+==================================================
+2. STORAGE PRODUÇÃO
+==================================================
+
+Objetivo:
+Eliminar dependência de disco local.
+
+Implementar provider de storage abstrato.
+
+Criar:
+
+storage/
+├── LocalStorageProvider
+├── S3StorageProvider
+
+Criar interface:
+
+StorageProvider
+
+Métodos:
+
+upload()
+delete()
+exists()
+getUrl()
+
+Implementar:
+
+STORAGE_PROVIDER=local|s3
+
+Variáveis:
+
+S3_BUCKET
+S3_REGION
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+
+Regras:
+
+- uploads locais continuam funcionando
+- produção pode usar S3 automaticamente
+- URLs retornadas devem ser públicas
+- VoiceService deve usar provider
+- Uploads de Contents devem usar provider
+
+Não remover suporte local.
+
+==================================================
+3. SWAGGER COMPLETO
+==================================================
+
+Objetivo:
+Documentar TODAS as rotas reais.
+
+Corrigir swagger.ts para ler automaticamente:
+
+- routes/**/*.ts
+- modules/**/*.routes.ts
+
+Documentar:
+
+POST /api/auth/refresh
+POST /api/auth/logout
+
+POST /api/ai/generate
+POST /api/ai/script
+POST /api/ai/summarize
+
+POST /api/tts/synthesize
+
+PUT /api/playlists/:id
+DELETE /api/playlists/:id
+
+DELETE /api/schedule/:id
+
+GET /api/admin/queues
+
+Garantir:
+
+- schemas
+- bodies
+- auth
+- responses
+- exemplos
+
+==================================================
+4. SEGURANÇA FINAL
+==================================================
+
+1. Validar JWT_REFRESH_SECRET
+
+Se:
+
+NODE_ENV=production
+
+e
+
+JWT_REFRESH_SECRET for padrão
+
+bloquear inicialização.
+
+---
+
+2. Corrigir autorização de usuários
+
+GET /users/:id
+
+PUT /users/:id
+
+Permitir apenas:
+
+- próprio usuário
+OU
+- admin
+
+---
+
+3. Redis Store no rate limit
+
+Substituir MemoryStore.
+
+Usar Redis.
+
+==================================================
+5. MELHORIAS IMPORTANTES
+==================================================
+
+1. Adicionar timeout nas queries críticas do banco
+
+2. Melhorar buildPlaylist()
+
+Evitar N+1 queries.
+
+Buscar conteúdos em batch.
+
+---
+
+3. Adicionar cleanup de uploads órfãos
+
+Job diário:
+
+- verificar arquivos sem referência
+- remover storage
+
+---
+
+4. Adicionar logs estruturados extras:
+
+- geração playlist
+- troca faixa
+- falhas TTS
+- falhas IA
+
+==================================================
+6. RELATÓRIO FINAL
+==================================================
+
+Gerar:
+
+- alterações realizadas
+- arquivos criados
+- migrations
+- endpoints documentados
+- workers ativos
+- status produção
+- status rádio contínua
+- riscos restantes

@@ -26,4 +26,10 @@ export const env = {
 
   defaultChannelId: Number(process.env["DEFAULT_CHANNEL_ID"] ?? 1),
   syncDb: process.env["SYNC_DB"] === "true",
+
+  storageProvider: (process.env["STORAGE_PROVIDER"] ?? "local") as "local" | "s3",
+  s3Bucket: process.env["S3_BUCKET"] ?? "",
+  s3Region: process.env["S3_REGION"] ?? "us-east-1",
+  s3AccessKeyId: process.env["S3_ACCESS_KEY_ID"] ?? "",
+  s3SecretAccessKey: process.env["S3_SECRET_ACCESS_KEY"] ?? "",
 };

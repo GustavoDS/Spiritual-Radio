@@ -54,6 +54,9 @@ export function startContentProcessingWorker(): Worker {
   worker.on("failed", (job, err) =>
     logger.error("Job failed", { jobId: job?.id, err: err.message }),
   );
+  worker.on("error", (err) =>
+    logger.warn("content-processing worker error (Redis unavailable?)", { err: err.message }),
+  );
 
   return worker;
 }
@@ -87,6 +90,9 @@ export function startVoiceSynthesisWorker(): Worker {
   worker.on("completed", (job) => logger.info("Voice synthesis completed", { jobId: job.id }));
   worker.on("failed", (job, err) =>
     logger.error("Voice synthesis failed", { jobId: job?.id, err: err.message }),
+  );
+  worker.on("error", (err) =>
+    logger.warn("voice-synthesis worker error (Redis unavailable?)", { err: err.message }),
   );
 
   return worker;

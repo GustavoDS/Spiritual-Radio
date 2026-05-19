@@ -1,4 +1,4 @@
-import { Op, literal } from "sequelize";
+import { Op } from "sequelize";
 import { Schedule, Content, Channel, Playlist, PlaylistItem } from "../models/index.js";
 import { logger } from "../lib/logger.js";
 import { HttpError } from "../middlewares/errorHandler.js";
@@ -27,7 +27,12 @@ export class PlaylistService {
       await this.buildPlaylist(playlist.id, channelId, date);
     }
 
-    logger.info("PlaylistService.generatePlaylist", { channelId, date, playlistId: playlist.id, created });
+    logger.info("PlaylistService.generatePlaylist", {
+      channelId,
+      date,
+      playlistId: playlist.id,
+      created,
+    });
     return playlist;
   }
 
@@ -45,14 +50,40 @@ export class PlaylistService {
 
     await PlaylistItem.destroy({ where: { playlist_id: playlistId } });
 
+    if (schedules.length === 0) {
+      logger.warn("PlaylistService.buildPlaylist: no schedule slots found", { channelId, date });
+      return [];
+    }
+
+    const tipos = [...new Set(schedules.map((s) => s.tipo).filter(Boolean))];
+
+    const contentsByTipo = new Map<string, Content[]>();
+    await Promise.all(
+      tipos.map(async (tipo) => {
+        const contents = await Content.findAll({
+          where: { channel_id: channelId, tipo, ativo: true },
+          attributes: ["id", "tipo", "titulo"],
+          limit: 200,
+        });
+        contentsByTipo.set(tipo, contents);
+        logger.debug("PlaylistService.buildPlaylist: batch loaded content", {
+          tipo,
+          count: contents.length,
+        });
+      }),
+    );
+
+    function pickRandom(tipo: string): Content | null {
+      const pool = contentsByTipo.get(tipo) ?? [];
+      if (pool.length === 0) return null;
+      return pool[Math.floor(Math.random() * pool.length)] ?? null;
+    }
+
     const items: PlaylistItem[] = [];
     let ordem = 0;
 
     for (const slot of schedules) {
-      const content = await Content.findOne({
-        where: { channel_id: channelId, tipo: slot.tipo, ativo: true },
-        order: [literal("RANDOM()")],
-      });
+      const content = pickRandom(slot.tipo);
 
       const slotDate = new Date(slot.horario_inicio);
       const hora_execucao = [
@@ -71,7 +102,14 @@ export class PlaylistService {
       items.push(item);
     }
 
-    logger.info("PlaylistService.buildPlaylist", { playlistId, channelId, date, itemCount: items.length });
+    logger.info("PlaylistService.buildPlaylist", {
+      playlistId,
+      channelId,
+      date,
+      scheduleSlots: schedules.length,
+      tiposUnicos: tipos.length,
+      itemCount: items.length,
+    });
     return items;
   }
 

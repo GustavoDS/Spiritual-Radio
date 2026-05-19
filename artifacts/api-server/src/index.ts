@@ -6,6 +6,9 @@ import { syncDatabase } from "./models/index.js";
 import { env } from "./config/env.js";
 import { startContentProcessingWorker, startVoiceSynthesisWorker } from "./jobs/contentProcessingJob.js";
 import { startScheduleWorker } from "./jobs/scheduleJob.js";
+import { startCleanupWorker } from "./jobs/cleanupJob.js";
+import { scheduleQueue, cleanupQueue } from "./queues/index.js";
+import { Channel, Playlist } from "./models/index.js";
 import type { Worker } from "bullmq";
 import type { Server } from "node:http";
 
@@ -23,6 +26,11 @@ if (Number.isNaN(port) || port <= 0) {
 
 if (env.nodeEnv === "production" && env.jwtSecret === "changeme-jwt-secret") {
   logger.error("FATAL: JWT_SECRET is set to the default insecure value. Set a strong secret before running in production.");
+  process.exit(1);
+}
+
+if (env.nodeEnv === "production" && env.jwtRefreshSecret === "changeme-jwt-refresh-secret") {
+  logger.error("FATAL: JWT_REFRESH_SECRET is set to the default insecure value. Set a strong secret before running in production.");
   process.exit(1);
 }
 
@@ -66,23 +74,100 @@ async function shutdown(signal: string): Promise<void> {
 process.on("SIGTERM", () => void shutdown("SIGTERM"));
 process.on("SIGINT", () => void shutdown("SIGINT"));
 
+process.on("unhandledRejection", (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  if (msg.includes("ECONNREFUSED") || msg.includes("Connection is closed") || msg.includes("maxRetriesPerRequest")) {
+    logger.warn("Unhandled Redis rejection (suppressed — Redis unavailable)", { reason: msg });
+    return;
+  }
+  logger.error("Unhandled promise rejection", { reason: msg });
+});
+
+async function setupCronJobs(): Promise<void> {
+  try {
+    await scheduleQueue.add(
+      "daily-playlist-generation",
+      {},
+      {
+        repeat: { pattern: "0 1 * * *" },
+        jobId: "daily-playlist-cron",
+      },
+    );
+    logger.info("Cron: daily playlist generation registered (01:00 every day)");
+
+    await cleanupQueue.add(
+      "daily-orphan-cleanup",
+      { dryRun: false },
+      {
+        repeat: { pattern: "0 3 * * *" },
+        jobId: "daily-cleanup-cron",
+      },
+    );
+    logger.info("Cron: daily orphan file cleanup registered (03:00 every day)");
+  } catch (err) {
+    logger.warn("Cron: failed to register repeat jobs — Redis may be unavailable", { err });
+  }
+}
+
+async function generateImmediatePlaylists(): Promise<void> {
+  try {
+    const today = new Date().toISOString().split("T")[0]!;
+    const channels = await Channel.findAll({ where: { ativo: true }, attributes: ["id"] });
+
+    if (channels.length === 0) {
+      logger.info("Immediate playlist: no active channels found — skipping");
+      return;
+    }
+
+    const missing: number[] = [];
+    for (const ch of channels) {
+      const existing = await Playlist.findOne({ where: { channel_id: ch.id, data: today } });
+      if (!existing) missing.push(ch.id);
+    }
+
+    if (missing.length === 0) {
+      logger.info("Immediate playlist: all channels already have a playlist for today", { today });
+      return;
+    }
+
+    for (const channelId of missing) {
+      await scheduleQueue.add("immediate-playlist", { channelId, date: today });
+      logger.info("Immediate playlist: queued generation", { channelId, today });
+    }
+  } catch (err) {
+    logger.warn("Immediate playlist generation skipped (Redis unavailable or DB error)", { err });
+  }
+}
+
 async function bootstrap(): Promise<void> {
   try {
     await connectDatabase();
     await syncDatabase();
     logger.info("Database synchronized");
 
-    await redis.connect().catch(() => {
-      logger.warn("Redis connection failed – queues will be unavailable");
-    });
-
+    let redisReady = false;
     try {
-      workers.push(startContentProcessingWorker());
-      workers.push(startVoiceSynthesisWorker());
-      workers.push(startScheduleWorker());
-      logger.info("BullMQ workers started (content-processing, voice-synthesis, schedule)");
-    } catch (err) {
-      logger.warn("BullMQ workers could not start – Redis may be unavailable", { err });
+      await redis.connect();
+      redisReady = redis.status === "ready";
+    } catch {
+      logger.warn("Redis connection failed – queues, cache and blacklist will be unavailable");
+    }
+
+    if (redisReady) {
+      try {
+        workers.push(startContentProcessingWorker());
+        workers.push(startVoiceSynthesisWorker());
+        workers.push(startScheduleWorker());
+        workers.push(startCleanupWorker());
+        logger.info("BullMQ workers started (content-processing, voice-synthesis, schedule, cleanup)");
+
+        await setupCronJobs();
+        await generateImmediatePlaylists();
+      } catch (err) {
+        logger.warn("BullMQ workers/cron setup error", { err });
+      }
+    } else {
+      logger.warn("BullMQ workers NOT started — Redis unavailable. Queues, cron and cache disabled.");
     }
   } catch (err) {
     logger.warn("Startup service error (app will still run)", { err });
@@ -92,6 +177,7 @@ async function bootstrap(): Promise<void> {
     logger.info(`Server listening on port ${port} [${env.nodeEnv}]`);
     logger.info(`Swagger docs: http://localhost:${port}/api/docs`);
     logger.info(`Static files served from: /${env.uploadDir}/`);
+    logger.info(`Storage provider: ${env.storageProvider}`);
   });
 }
 
