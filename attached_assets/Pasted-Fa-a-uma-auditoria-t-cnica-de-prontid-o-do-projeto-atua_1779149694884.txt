@@ -1,0 +1,201 @@
+Faça uma auditoria técnica de prontidão do projeto atual sem modificar nenhum código.
+
+Objetivo:
+Verificar se a API está pronta para seguir para integração frontend, IA, TTS e posteriormente deploy.
+
+IMPORTANTE:
+Não alterar código.
+Não instalar dependências.
+Não corrigir nada automaticamente.
+Somente analisar e gerar relatório.
+
+Gerar:
+
+# 1. Arquitetura atual
+
+Validar:
+
+- separação de responsabilidades
+- acoplamento entre módulos
+- dependências circulares
+- organização dos serviços
+- riscos futuros
+
+Classificar:
+
+OK
+Atenção
+Crítico
+
+---
+
+# 2. Banco de dados
+
+Validar:
+
+- modelos
+- relacionamentos
+- normalização
+- índices
+- chaves estrangeiras
+- tipos de dados
+- campos obrigatórios
+- riscos de crescimento
+
+Para cada entidade informar:
+
+OK
+Atenção
+Crítico
+
+---
+
+# 3. APIs
+
+Validar:
+
+- consistência das rotas
+- padrões REST
+- respostas padronizadas
+- paginação
+- filtros
+- autenticação
+- códigos HTTP
+
+Identificar:
+
+rotas redundantes
+rotas faltantes
+rotas inseguras
+
+---
+
+# 4. Segurança
+
+Validar:
+
+JWT
+Roles
+Middleware auth
+Bcrypt
+Rate limit
+Helmet
+Validações
+CORS
+Uploads
+Proteção contra upload malicioso
+Proteção contra brute force
+
+Classificar:
+
+Implementado
+Parcial
+Não implementado
+
+---
+
+# 5. Filas e processamento
+
+Validar:
+
+BullMQ
+Workers
+Retry
+Backoff
+Redis
+Tratamento de falhas
+Persistência
+
+Identificar gargalos.
+
+---
+
+# 6. Uploads
+
+Validar:
+
+- armazenamento local
+- limites
+- extensões
+- sanitização
+- escalabilidade
+
+---
+
+# 7. IA e Voz
+
+Validar:
+
+AiService
+VoiceService
+Workers de síntese
+
+Identificar:
+
+o que está mock
+o que está pronto
+o que falta
+
+---
+
+# 8. Performance
+
+Validar:
+
+cache Redis
+consultas
+paginação
+índices
+possíveis gargalos
+
+---
+
+# 9. Deploy readiness
+
+Verificar:
+
+.env
+logs
+tratamento de erros
+Swagger
+healthcheck
+workers
+Redis opcional
+produção
+
+Classificar:
+
+Pronto
+Parcial
+Bloqueador
+
+---
+
+# 10. MVP readiness
+
+Responder:
+
+O sistema está:
+
+- pronto para integração frontend?
+- pronto para IA?
+- pronto para TTS?
+- pronto para deploy?
+- pronto para rádio contínua?
+
+Explicar motivo.
+
+---
+
+# 11. Próximas ações recomendadas
+
+Gerar lista priorizada:
+
+Prioridade crítica
+Prioridade alta
+Prioridade média
+Prioridade baixa
+
+Não gerar código.
+Não modificar arquivos.
+Somente auditoria técnica detalhada.
