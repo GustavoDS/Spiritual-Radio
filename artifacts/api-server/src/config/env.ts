@@ -14,4 +14,8 @@ export const env = {
   rateLimitWindowMs: Number(process.env["RATE_LIMIT_WINDOW_MS"] ?? 60_000),
   rateLimitMax: Number(process.env["RATE_LIMIT_MAX"] ?? 100),
   rateLimitAuthMax: Number(process.env["RATE_LIMIT_AUTH_MAX"] ?? 20),
+
+  aiProvider: (process.env["AI_PROVIDER"] ?? "openai") as "openai" | "anthropic" | "gemini" | "openrouter",
+  aiApiKey: process.env["AI_API_KEY"] ?? "",
+  aiModel: process.env["AI_MODEL"] ?? "",
 };
