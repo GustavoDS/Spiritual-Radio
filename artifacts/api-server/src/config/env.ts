@@ -7,6 +7,7 @@ export const env = {
   redisUrl: process.env["REDIS_URL"] ?? "redis://localhost:6379",
   jwtSecret: process.env["JWT_SECRET"] ?? "changeme-jwt-secret",
   jwtExpiresIn: process.env["JWT_EXPIRES_IN"] ?? "7d",
+  jwtRefreshSecret: process.env["JWT_REFRESH_SECRET"] ?? "changeme-jwt-refresh-secret",
   logLevel: process.env["LOG_LEVEL"] ?? "info",
   uploadDir: process.env["UPLOAD_DIR"] ?? "uploads",
   maxFileSizeMb: Number(process.env["MAX_FILE_SIZE_MB"] ?? 50),

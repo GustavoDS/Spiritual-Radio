@@ -1,6 +1,8 @@
 import type { Request, Response, NextFunction } from "express";
 import { verifyToken, type JwtPayload } from "../utils/jwt.js";
 import { unauthorized, forbidden } from "../utils/response.js";
+import { redis } from "../config/redis.js";
+import { logger } from "../lib/logger.js";
 
 declare global {
   namespace Express {
@@ -10,7 +12,7 @@ declare global {
   }
 }
 
-export function authenticate(req: Request, res: Response, next: NextFunction): void {
+export async function authenticate(req: Request, res: Response, next: NextFunction): Promise<void> {
   const authHeader = req.headers["authorization"];
   if (!authHeader?.startsWith("Bearer ")) {
     unauthorized(res, "Token de autenticação não fornecido");
@@ -18,12 +20,26 @@ export function authenticate(req: Request, res: Response, next: NextFunction): v
   }
 
   const token = authHeader.slice(7);
+  let payload: JwtPayload;
   try {
-    req.user = verifyToken(token);
-    next();
+    payload = verifyToken(token);
   } catch {
     unauthorized(res, "Token inválido ou expirado");
+    return;
   }
+
+  try {
+    const blacklisted = await redis.exists(`blacklist:${token}`);
+    if (blacklisted) {
+      unauthorized(res, "Token revogado — faça login novamente");
+      return;
+    }
+  } catch (err) {
+    logger.debug("Redis unavailable during blacklist check — fail open", { err });
+  }
+
+  req.user = payload;
+  next();
 }
 
 export function requireRole(...roles: string[]) {

@@ -9,8 +9,20 @@ export interface CreateScheduleDto {
   tipo: string;
 }
 
+export interface ScheduleFilters {
+  channelId?: number;
+  data?: string;
+  page?: number;
+  limit?: number;
+}
+
 export class SchedulesService {
-  async findAll(channelId?: number, data?: string) {
+  async findAll(filters: ScheduleFilters = {}) {
+    const { channelId, data } = filters;
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 50;
+    const offset = (page - 1) * limit;
+
     if (data) {
       const start = new Date(data);
       const end = new Date(data);
@@ -20,13 +32,18 @@ export class SchedulesService {
         horario_inicio: { [Op.between]: [start, end] },
       };
       if (channelId) where["channel_id"] = channelId;
-      return Schedule.findAll({
+      const { count, rows } = await Schedule.findAndCountAll({
         where,
         include: [{ model: Channel, as: "channel", attributes: ["id", "nome"] }],
         order: [["horario_inicio", "ASC"]],
+        limit,
+        offset,
       });
+      return { items: rows, total: count, page, limit, totalPages: Math.ceil(count / limit) };
     }
-    return svc.getTodaySchedule(channelId);
+
+    const items = await svc.getTodaySchedule(channelId);
+    return { items, total: items.length, page: 1, limit: items.length, totalPages: 1 };
   }
 
   async create(dto: CreateScheduleDto) {

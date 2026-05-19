@@ -1,9 +1,22 @@
 import { Category } from "../../models/index.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
 
+export interface CategoryFilters {
+  page?: number;
+  limit?: number;
+}
+
 export class CategoriesService {
-  async findAll() {
-    return Category.findAll({ order: [["nome", "ASC"]] });
+  async findAll(filters: CategoryFilters = {}) {
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 20;
+    const offset = (page - 1) * limit;
+    const { count, rows } = await Category.findAndCountAll({
+      order: [["nome", "ASC"]],
+      limit,
+      offset,
+    });
+    return { items: rows, total: count, page, limit, totalPages: Math.ceil(count / limit) };
   }
 
   async findById(id: number) {

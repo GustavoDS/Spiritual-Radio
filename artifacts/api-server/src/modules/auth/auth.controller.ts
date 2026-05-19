@@ -31,6 +31,20 @@ export async function login(req: Request, res: Response): Promise<void> {
   ok(res, result, "Login realizado com sucesso");
 }
 
+export async function refresh(req: Request, res: Response): Promise<void> {
+  const { refreshToken } = req.body as { refreshToken: string };
+  const result = await authService.refresh(refreshToken);
+  ok(res, result, "Token renovado com sucesso");
+}
+
+export async function logout(req: Request, res: Response): Promise<void> {
+  const authHeader = req.headers["authorization"];
+  const accessToken = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : "";
+  const { refreshToken } = req.body as { refreshToken?: string };
+  const result = await authService.logout(accessToken, refreshToken);
+  ok(res, result);
+}
+
 export async function recover(req: Request, res: Response): Promise<void> {
   const { email } = req.body as { email: string };
   if (!email) {

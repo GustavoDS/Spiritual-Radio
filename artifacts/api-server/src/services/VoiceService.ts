@@ -1,5 +1,6 @@
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
 import { logger } from "../lib/logger.js";
 import { Voice } from "../models/index.js";
 import { voiceSynthesisQueue } from "../queues/index.js";
@@ -7,6 +8,7 @@ import { env } from "../config/env.js";
 import { synthesizeOpenAI } from "./tts/openaiTts.js";
 import { synthesizeElevenLabs } from "./tts/elevenlabsTts.js";
 import { filePathToUrl } from "../utils/fileUrl.js";
+import { redis } from "../config/redis.js";
 
 export interface SynthesisOptions {
   text: string;
@@ -20,7 +22,10 @@ export interface SynthesisResult {
   url: string;
   queued: boolean;
   jobId?: string;
+  cached?: boolean;
 }
+
+const TTS_CACHE_TTL = 7 * 24 * 3600;
 
 function ensureDir(dir: string): void {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -33,21 +38,24 @@ function buildOutputPath(): string {
   return path.join(audioDir, filename);
 }
 
+function ttsCacheKey(text: string, voiceId: number): string {
+  return `tts:${crypto.createHash("sha256").update(`${text}:${voiceId}`).digest("hex")}`;
+}
+
 export async function runSynthesis(text: string, voice: Voice): Promise<{ filePath: string; url: string }> {
   if (!env.ttsApiKey) {
-    throw new Error(
-      "TTS_API_KEY não configurado — defina a variável de ambiente antes de usar a síntese de voz",
-    );
+    throw new Error("TTS_API_KEY não configurado — defina a variável de ambiente antes de usar a síntese de voz");
   }
 
   const provider = voice.provider === "elevenlabs" ? "elevenlabs" : env.ttsProvider;
-  logger.info("runSynthesis", { provider, voiceNome: voice.nome, textLength: text.length });
+  const voiceIdentifier = voice.voice_id_externo ?? voice.nome;
+  logger.info("runSynthesis", { provider, voiceIdentifier, textLength: text.length });
 
   let audioBuffer: Buffer;
   if (provider === "elevenlabs") {
-    audioBuffer = await synthesizeElevenLabs(text, voice.nome);
+    audioBuffer = await synthesizeElevenLabs(text, voiceIdentifier);
   } else {
-    audioBuffer = await synthesizeOpenAI(text, voice.nome);
+    audioBuffer = await synthesizeOpenAI(text, voiceIdentifier);
   }
 
   const filePath = buildOutputPath();
@@ -64,6 +72,15 @@ export class VoiceService {
     const voice = await Voice.findByPk(opts.voiceId);
     if (!voice) throw new Error(`Voz com id ${opts.voiceId} não encontrada`);
 
+    const cacheKey = ttsCacheKey(opts.text, opts.voiceId);
+    try {
+      const cachedUrl = await redis.get(cacheKey);
+      if (cachedUrl) {
+        logger.info("VoiceService.synthesize: cache hit", { cacheKey });
+        return { filePath: "", url: cachedUrl, queued: false, cached: true };
+      }
+    } catch { /* redis unavailable */ }
+
     const outputPath = opts.outputPath ?? buildOutputPath();
 
     try {
@@ -74,15 +91,15 @@ export class VoiceService {
         outputPath,
       });
       logger.info("Voice synthesis job queued", { jobId: job.id });
-      return {
-        filePath: outputPath,
-        url: filePathToUrl(outputPath),
-        queued: true,
-        jobId: String(job.id),
-      };
+      return { filePath: outputPath, url: filePathToUrl(outputPath), queued: true, jobId: String(job.id) };
     } catch {
       logger.warn("Redis unavailable — synthesizing inline", { voiceId: opts.voiceId });
       const result = await runSynthesis(opts.text, voice);
+
+      try {
+        await redis.setex(cacheKey, TTS_CACHE_TTL, result.url);
+      } catch { /* ignore */ }
+
       return { ...result, queued: false };
     }
   }

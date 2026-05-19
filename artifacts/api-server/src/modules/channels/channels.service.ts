@@ -7,9 +7,22 @@ export interface CreateChannelDto {
   ativo?: boolean;
 }
 
+export interface ChannelFilters {
+  page?: number;
+  limit?: number;
+}
+
 export class ChannelsService {
-  async findAll() {
-    return Channel.findAll({ order: [["nome", "ASC"]] });
+  async findAll(filters: ChannelFilters = {}) {
+    const page = filters.page ?? 1;
+    const limit = filters.limit ?? 20;
+    const offset = (page - 1) * limit;
+    const { count, rows } = await Channel.findAndCountAll({
+      order: [["nome", "ASC"]],
+      limit,
+      offset,
+    });
+    return { items: rows, total: count, page, limit, totalPages: Math.ceil(count / limit) };
   }
 
   async findById(id: number) {

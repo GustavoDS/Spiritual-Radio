@@ -2,12 +2,18 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import cors from "cors";
 import helmet from "helmet";
 import swaggerUi from "swagger-ui-express";
+import { createBullBoard } from "@bull-board/api";
+import { BullMQAdapter } from "@bull-board/api/bullMQAdapter";
+import { ExpressAdapter } from "@bull-board/express";
 import router from "./routes/index.js";
 import { logger } from "./lib/logger.js";
 import { swaggerSpec } from "./config/swagger.js";
 import { errorHandler, notFoundHandler } from "./middlewares/errorHandler.js";
 import { globalLimiter } from "./middlewares/rateLimiter.js";
+import { requestIdMiddleware } from "./middlewares/requestId.js";
+import { authenticate, requireAdmin } from "./middlewares/auth.js";
 import { env } from "./config/env.js";
+import { contentProcessingQueue, voiceSynthesisQueue, scheduleQueue } from "./queues/index.js";
 
 const app: Express = express();
 
@@ -18,6 +24,7 @@ app.use(helmet({
 }));
 
 app.use(cors({ origin: env.corsOrigins, credentials: true }));
+app.use(requestIdMiddleware);
 app.use(globalLimiter);
 
 app.use(express.static(env.uploadDir, {
@@ -32,10 +39,26 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use((req: Request, res: Response, next: NextFunction) => {
   const start = Date.now();
   res.on("finish", () => {
-    logger.http(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`);
+    logger.http(`${req.method} ${req.path} ${res.statusCode} ${Date.now() - start}ms`, {
+      requestId: req.id,
+    });
   });
   next();
 });
+
+const bullServerAdapter = new ExpressAdapter();
+bullServerAdapter.setBasePath("/api/admin/queues");
+
+createBullBoard({
+  queues: [
+    new BullMQAdapter(contentProcessingQueue),
+    new BullMQAdapter(voiceSynthesisQueue),
+    new BullMQAdapter(scheduleQueue),
+  ],
+  serverAdapter: bullServerAdapter,
+});
+
+app.use("/api/admin/queues", authenticate, requireAdmin, bullServerAdapter.getRouter());
 
 app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
   customSiteTitle: "Rádio Espiritual API",

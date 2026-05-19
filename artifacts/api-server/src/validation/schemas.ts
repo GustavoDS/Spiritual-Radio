@@ -16,6 +16,10 @@ export const recoverSchema = z.object({
   email: z.string({ required_error: "email é obrigatório" }).email("email inválido"),
 });
 
+export const refreshSchema = z.object({
+  refreshToken: z.string({ required_error: "refreshToken é obrigatório" }).min(1),
+});
+
 export const createChannelSchema = z.object({
   nome: z.string({ required_error: "nome é obrigatório" }).min(1, "nome é obrigatório").max(255),
   descricao: z.string().max(5000).optional(),
@@ -42,6 +46,8 @@ export const createPlaylistSchema = z.object({
   data: z.string({ required_error: "data é obrigatória" }).regex(/^\d{4}-\d{2}-\d{2}$/, "data deve estar no formato YYYY-MM-DD"),
 });
 
+export const updatePlaylistSchema = createPlaylistSchema.partial();
+
 export const createContentSchema = z.object({
   titulo: z.string({ required_error: "titulo é obrigatório" }).min(1).max(500),
   tipo: z.string({ required_error: "tipo é obrigatório" }).min(1).max(100),
@@ -55,3 +61,30 @@ export const createContentSchema = z.object({
 });
 
 export const updateContentSchema = createContentSchema.partial();
+
+export const createVoiceSchema = z.object({
+  nome: z.string({ required_error: "nome é obrigatório" }).min(1).max(255),
+  voice_id_externo: z.string().max(255).optional(),
+  provider: z.enum(["openai", "elevenlabs"], { required_error: "provider é obrigatório" }),
+  horario_preferencial: z.enum(["manha", "tarde", "noite"]).optional(),
+  ativo: z.boolean().optional(),
+});
+
+export const updateVoiceSchema = createVoiceSchema.partial();
+
+export const generateAiSchema = z.object({
+  tema: z.string({ required_error: "tema é obrigatório" }).min(1).max(500),
+  tipo: z.string({ required_error: "tipo é obrigatório" }).min(1).max(100),
+  duracao: z.coerce.number().int().positive().optional(),
+  estilo: z.string().max(255).optional(),
+});
+
+export const generateScriptSchema = z.object({
+  tema: z.string({ required_error: "tema é obrigatório" }).min(1).max(500),
+  duracao: z.coerce.number().int().positive().optional().default(120),
+});
+
+export const synthesizeTtsSchema = z.object({
+  voiceId: z.number({ required_error: "voiceId é obrigatório", invalid_type_error: "voiceId deve ser número" }).int().positive(),
+  text: z.string({ required_error: "text é obrigatório" }).min(1).max(10_000),
+});

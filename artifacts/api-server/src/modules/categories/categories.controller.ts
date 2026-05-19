@@ -1,9 +1,13 @@
 import type { Request, Response } from "express";
 import { categoriesService } from "./categories.service.js";
-import { ok, created, noContent, badRequest } from "../../utils/response.js";
+import { ok, created, noContent, badRequest, paginated } from "../../utils/response.js";
 
-export async function getAll(_req: Request, res: Response): Promise<void> {
-  ok(res, await categoriesService.findAll());
+export async function getAll(req: Request, res: Response): Promise<void> {
+  const result = await categoriesService.findAll({
+    page: Number(req.query["page"]) || 1,
+    limit: Number(req.query["limit"]) || 20,
+  });
+  paginated(res, result.items, result.total, result.page, result.limit);
 }
 
 export async function getById(req: Request, res: Response): Promise<void> {

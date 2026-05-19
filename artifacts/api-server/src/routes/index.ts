@@ -9,6 +9,8 @@ import schedulesRouter from "../modules/schedules/schedules.routes.js";
 import playlistsRouter from "../modules/playlists/playlists.routes.js";
 import voicesRouter from "../modules/voices/voices.routes.js";
 import radioRouter from "../modules/radio/radio.routes.js";
+import aiRouter from "../modules/ai/ai.routes.js";
+import ttsRouter from "../modules/tts/tts.routes.js";
 
 const router: IRouter = Router();
 
@@ -22,5 +24,7 @@ router.use("/schedule", schedulesRouter);
 router.use("/playlists", playlistsRouter);
 router.use("/voices", voicesRouter);
 router.use("/radio", radioRouter);
+router.use("/ai", aiRouter);
+router.use("/tts", ttsRouter);
 
 export default router;

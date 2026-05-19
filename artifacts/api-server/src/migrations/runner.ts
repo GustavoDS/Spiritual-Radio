@@ -141,6 +141,19 @@ const migrations = [
     },
     async down({ context: qi }: Ctx) { await qi.dropTable("playlist_items"); },
   },
+  {
+    name: "09-add-voice-id-externo",
+    async up({ context: qi }: Ctx) {
+      await qi.addColumn("voices", "voice_id_externo", {
+        type: DataTypes.STRING(255),
+        allowNull: true,
+        comment: "ID técnico do provider TTS. ElevenLabs: voice_id; OpenAI: nome da voz (nova, alloy, etc.)",
+      });
+    },
+    async down({ context: qi }: Ctx) {
+      await qi.removeColumn("voices", "voice_id_externo");
+    },
+  },
 ];
 
 export const umzug = new Umzug({
