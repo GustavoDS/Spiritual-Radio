@@ -12,3 +12,9 @@ id = "IHT0qULErVH--hZ2WQZxU"
 uri = "file://radio-espiritual-api.zip"
 type = "unspecified"
 title = "Rádio Espiritual — Código Fonte (.zip)"
+
+[[outputs]]
+id = "qxMMZwRM0osujVvZYMW4L"
+uri = "file://artifacts/api-server/README.md"
+type = "text"
+title = "README — Rádio Espiritual Inteligente API"
