@@ -1,0 +1,153 @@
+Implementar endpoints operacionais avançados para administração da Rádio Espiritual Inteligente.
+
+IMPORTANTE:
+Não alterar endpoints existentes.
+Não quebrar compatibilidade.
+Apenas adicionar ferramentas operacionais complementares.
+
+Objetivo:
+Melhorar monitoramento, operação manual, administração e automação do sistema.
+
+Implementar:
+
+1. Mensagens — contador rápido
+
+GET /api/admin/messages/unread-count
+
+Retorno:
+{
+success: true,
+data: {
+unread: number
+}
+}
+
+Objetivo:
+Permitir badges e polling leve no frontend sem carregar toda listagem.
+
+2. Mensagens — alteração de prioridade
+
+PATCH /api/admin/messages/:id/priority
+
+Body:
+{
+prioridade: "baixa" | "normal" | "alta" | "urgente"
+}
+
+Objetivo:
+Permitir triagem administrativa de pedidos importantes.
+
+3. Playlists — regeneração manual
+
+POST /api/admin/playlists/:id/regenerate
+
+Objetivo:
+Recriar itens da playlist usando schedules atuais e conteúdos disponíveis.
+
+Regras:
+
+* remover PlaylistItems antigos
+* reconstruir playlist
+* preservar playlist principal
+* registrar logs
+
+4. Schedules — execução manual
+
+POST /api/admin/schedule/run-now
+
+Objetivo:
+Executar imediatamente a geração de playlists sem esperar cron diário.
+
+Body opcional:
+{
+channel_id?: number
+}
+
+5. Rádio — status operacional
+
+GET /api/admin/radio/status
+
+Retornar:
+
+* online
+* currentTrack
+* nextTrack
+* redis
+* database
+* queues
+* aiProvider
+* ttsProvider
+* activeChannels
+* uptime
+* memoryUsage
+* cpuUsage básico
+* generatedToday
+* messagesPending
+
+Objetivo:
+Painel operacional real da rádio.
+
+6. Sistema — health detalhado
+
+GET /api/admin/system/health
+
+Retornar:
+
+* postgres
+* redis
+* bullmq
+* storage
+* uploads
+* ai
+* tts
+* cron
+* disk usage
+* memory usage
+* environment
+* version
+
+Objetivo:
+Diagnóstico administrativo completo.
+
+7. Conteúdos — gerar TTS manualmente
+
+POST /api/admin/contents/:id/generate-tts
+
+Objetivo:
+Permitir regeneração manual de áudio para conteúdos já existentes.
+
+Regras:
+
+* gerar novo áudio
+* atualizar audio_url
+* invalidar cache
+* salvar histórico/log
+
+8. Logs operacionais
+
+Criar logs para:
+
+* regeneração playlist
+* execução manual
+* geração TTS manual
+* mudanças prioridade mensagens
+
+9. Swagger
+
+Documentar todos os novos endpoints.
+
+10. Segurança
+
+Todos os endpoints:
+
+* requireAdmin
+* JWT obrigatório
+* rate limit administrativo
+* logs auditoria
+
+11. Não alterar:
+
+* endpoints públicos
+* endpoints existentes
+* payloads atuais
+* estrutura frontend atual

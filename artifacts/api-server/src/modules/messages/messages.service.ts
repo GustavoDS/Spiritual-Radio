@@ -127,6 +127,17 @@ export class MessageService {
     return msg;
   }
 
+  async updatePriority(id: number, prioridade: ContactPrioridade): Promise<ContactMessage> {
+    const msg = await ContactMessage.findByPk(id);
+    if (!msg) throw new HttpError("Mensagem não encontrada", 404);
+    await msg.update({ prioridade });
+    return msg;
+  }
+
+  async countUnread(): Promise<number> {
+    return ContactMessage.count({ where: { lido_em: null } });
+  }
+
   async remove(id: number): Promise<void> {
     const msg = await ContactMessage.findByPk(id);
     if (!msg) throw new HttpError("Mensagem não encontrada", 404);

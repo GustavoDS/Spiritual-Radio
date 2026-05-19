@@ -1221,6 +1221,275 @@ const options: swaggerJsdoc.Options = {
           },
         },
       },
+      "/admin/messages/unread-count": {
+        get: {
+          tags: ["Mensagens"],
+          summary: "Contagem rápida de mensagens não lidas (admin only)",
+          description: "Endpoint leve para badges e polling frequente no frontend — não carrega a listagem completa.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Contador de não lidas",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: { type: "object", properties: { unread: { type: "integer", example: 5 } } },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/messages/{id}/priority": {
+        patch: {
+          tags: ["Mensagens"],
+          summary: "Alterar prioridade da mensagem (admin only)",
+          description: "Triagem administrativa — define urgência de um pedido de oração ou contato.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["prioridade"],
+                  properties: {
+                    prioridade: { type: "string", enum: ["baixa", "normal", "alta", "urgente"] },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": { description: "Prioridade atualizada" },
+            "400": { description: "Prioridade inválida" },
+            "404": { description: "Mensagem não encontrada" },
+          },
+        },
+      },
+      "/admin/playlists/{id}/regenerate": {
+        post: {
+          tags: ["Playlists"],
+          summary: "Regenerar playlist manualmente (admin only)",
+          description: "Remove todos os PlaylistItems existentes e reconstrói a playlist com os schedules e conteúdos atuais. Rate limit: 20 ops/min.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          responses: {
+            "200": {
+              description: "Playlist regenerada",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          playlistId: { type: "integer" },
+                          itemsGerados: { type: "integer" },
+                          data: { type: "string", format: "date" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "404": { description: "Playlist não encontrada" },
+          },
+        },
+      },
+      "/admin/schedule/run-now": {
+        post: {
+          tags: ["Schedules"],
+          summary: "Executar geração de playlists imediatamente (admin only)",
+          description: "Dispara a geração de playlists para hoje sem esperar o cron das 01:00. Usa BullMQ se Redis disponível, executa inline caso contrário. Rate limit: 20 ops/min.",
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: false,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    channel_id: { type: "integer", description: "ID do canal específico (omitir = todos os canais ativos)" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "201": {
+              description: "Geração iniciada",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          date: { type: "string", format: "date" },
+                          channels: {
+                            type: "array",
+                            items: {
+                              type: "object",
+                              properties: {
+                                channelId: { type: "integer" },
+                                queued: { type: "boolean", description: "true = enfileirado no BullMQ; false = executado inline" },
+                                items: { type: "integer", description: "Itens gerados (apenas quando queued=false)" },
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "404": { description: "Canal não encontrado" },
+          },
+        },
+      },
+      "/admin/radio/status": {
+        get: {
+          tags: ["Radio"],
+          summary: "Status operacional completo da rádio (admin only)",
+          description: "Painel operacional em tempo real: faixa atual, próxima, saúde do Redis/Postgres, filas BullMQ, uso de memória/CPU, estatísticas do dia.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Status operacional",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          online: { type: "boolean" },
+                          currentTrack: { nullable: true, $ref: "#/components/schemas/Content" },
+                          nextTrack: { nullable: true, $ref: "#/components/schemas/Content" },
+                          redis: { type: "object", properties: { ok: { type: "boolean" }, latencyMs: { type: "integer", nullable: true } } },
+                          database: { type: "object", properties: { ok: { type: "boolean" }, latencyMs: { type: "integer", nullable: true } } },
+                          queues: { type: "object" },
+                          aiProvider: { type: "string" },
+                          ttsProvider: { type: "string" },
+                          activeChannels: { type: "integer" },
+                          uptime: { type: "integer", description: "Uptime em segundos" },
+                          memoryUsage: { type: "object", properties: { heapUsedMb: { type: "number" }, heapTotalMb: { type: "number" }, rssMb: { type: "number" } } },
+                          cpuUsage: { type: "object", properties: { userMs: { type: "integer" }, systemMs: { type: "integer" } } },
+                          generatedToday: { type: "integer" },
+                          messagesPending: { type: "integer" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/system/health": {
+        get: {
+          tags: ["Admin"],
+          summary: "Health check detalhado do sistema (admin only)",
+          description: "Diagnóstico completo: Postgres, Redis, BullMQ, storage, memória, ambiente e versão.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Resultado do diagnóstico",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          status: { type: "string", enum: ["healthy", "degraded"] },
+                          postgres: { type: "object", properties: { ok: { type: "boolean" }, latencyMs: { type: "integer" } } },
+                          redis: { type: "object", properties: { ok: { type: "boolean" }, latencyMs: { type: "integer", nullable: true } } },
+                          bullmq: { type: "object" },
+                          storage: { type: "object", properties: { ok: { type: "boolean" }, provider: { type: "string" }, uploadDir: { type: "string" }, dirExists: { type: "boolean" } } },
+                          memory: { type: "object" },
+                          environment: { type: "object", properties: { nodeEnv: { type: "string" }, aiProvider: { type: "string" }, ttsProvider: { type: "string" }, storageProvider: { type: "string" }, nodeVersion: { type: "string" } } },
+                          uptime: { type: "integer" },
+                          checkedAt: { type: "string", format: "date-time" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/contents/{id}/generate-tts": {
+        post: {
+          tags: ["Contents"],
+          summary: "Gerar TTS manualmente para um conteúdo (admin only)",
+          description: "Sintetiza áudio para o texto fornecido, salva em storage, atualiza audio_url do conteúdo e invalida o cache de rádio. Rate limit: 20 ops/min.",
+          security: [{ bearerAuth: [] }],
+          parameters: [{ name: "id", in: "path", required: true, schema: { type: "integer" } }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  required: ["text"],
+                  properties: {
+                    text: { type: "string", minLength: 5, maxLength: 10000, example: "Bem-vindos à Rádio Espiritual. Que a paz de Deus guarde seus corações." },
+                    voice_id: { type: "integer", description: "ID da voz (omitir = auto-seleciona por horário)" },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Áudio gerado com sucesso",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          contentId: { type: "integer" },
+                          voiceId: { type: "integer" },
+                          voiceNome: { type: "string" },
+                          audioUrl: { type: "string" },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+            "400": { description: "TTS_API_KEY não configurado" },
+            "404": { description: "Conteúdo ou voz não encontrados" },
+            "422": { description: "Voz inativa ou nenhuma voz disponível" },
+          },
+        },
+      },
       "/admin/queues": {
         get: {
           tags: ["Admin"],

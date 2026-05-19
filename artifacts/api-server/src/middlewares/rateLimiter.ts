@@ -36,6 +36,14 @@ export const authLimiter = rateLimit({
   message: { success: false, message: "Muitas tentativas de autenticação — aguarde antes de tentar novamente" },
 });
 
+export const adminOpsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { success: false, message: "Muitas operações em curto intervalo — aguarde antes de tentar novamente" },
+});
+
 export const contactLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 5,
