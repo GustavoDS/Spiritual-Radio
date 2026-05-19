@@ -67,10 +67,16 @@ export class ContentsService {
   async create(dto: CreateContentDto) {
     const content = await Content.create(dto as unknown as Parameters<typeof Content.create>[0]);
 
-    await contentProcessingQueue.add("process", {
-      contentId: content.id,
-      audioPath: dto.audio_url,
-    });
+    try {
+      await contentProcessingQueue.add("process", {
+        contentId: content.id,
+        audioPath: dto.audio_url,
+      });
+    } catch {
+      logger.warn("contentProcessingQueue unavailable — content saved without async processing", {
+        contentId: content.id,
+      });
+    }
 
     logger.info("Content created", { contentId: content.id, tipo: dto.tipo });
     return content;
