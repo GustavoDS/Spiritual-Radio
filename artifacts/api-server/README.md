@@ -29,6 +29,10 @@ pnpm install
 
 ```bash
 cp artifacts/api-server/.env.example artifacts/api-server/.env
+"windows cmd"
+copy artifacts\api-server\.env.example artifacts\api-server\.env
+"windows PowerShell"
+Copy-Item artifacts/api-server/.env.example artifacts/api-server/.env
 ```
 
 Abra o `.env` e preencha pelo menos as variáveis obrigatórias:
