@@ -9,7 +9,6 @@ export interface RegisterDto {
   nome: string;
   email: string;
   senha: string;
-  role?: "admin" | "user" | "editor";
 }
 
 export interface LoginDto {
@@ -27,7 +26,7 @@ export class AuthService {
       nome: dto.nome,
       email: dto.email,
       senha: hashed,
-      role: dto.role ?? "user",
+      role: "user",
     });
 
     logger.info("User registered", { userId: user.id, email: user.email });

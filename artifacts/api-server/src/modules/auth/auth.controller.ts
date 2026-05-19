@@ -3,11 +3,10 @@ import { authService } from "./auth.service.js";
 import { created, ok, badRequest } from "../../utils/response.js";
 
 export async function register(req: Request, res: Response): Promise<void> {
-  const { nome, email, senha, role } = req.body as {
+  const { nome, email, senha } = req.body as {
     nome: string;
     email: string;
     senha: string;
-    role?: "admin" | "user" | "editor";
   };
 
   if (!nome || !email || !senha) {
@@ -15,7 +14,7 @@ export async function register(req: Request, res: Response): Promise<void> {
     return;
   }
 
-  const result = await authService.register({ nome, email, senha, role });
+  const result = await authService.register({ nome, email, senha });
   created(res, result, "Usuário registrado com sucesso");
 }
 

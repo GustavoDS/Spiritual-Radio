@@ -4,7 +4,6 @@ export const registerSchema = z.object({
   nome: z.string({ required_error: "nome é obrigatório" }).min(2, "nome deve ter ao menos 2 caracteres").max(255),
   email: z.string({ required_error: "email é obrigatório" }).email("email inválido"),
   senha: z.string({ required_error: "senha é obrigatória" }).min(6, "senha deve ter ao menos 6 caracteres"),
-  role: z.enum(["admin", "user", "editor"]).optional(),
 });
 
 export const loginSchema = z.object({
