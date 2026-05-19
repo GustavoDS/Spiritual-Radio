@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health.js";
+import publicRouter from "./public.js";
 import authRouter from "../modules/auth/auth.routes.js";
 import usersRouter from "../modules/users/users.routes.js";
 import channelsRouter from "../modules/channels/channels.routes.js";
@@ -15,6 +16,9 @@ import ttsRouter from "../modules/tts/tts.routes.js";
 const router: IRouter = Router();
 
 router.use(healthRouter);
+
+router.use("/public", publicRouter);
+
 router.use("/auth", authRouter);
 router.use("/users", usersRouter);
 router.use("/channels", channelsRouter);

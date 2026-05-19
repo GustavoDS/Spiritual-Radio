@@ -123,15 +123,16 @@ const options: swaggerJsdoc.Options = {
       },
     },
     tags: [
+      { name: "Público", description: "Endpoints públicos — sem autenticação necessária" },
       { name: "Auth", description: "Autenticação e autorização" },
       { name: "Users", description: "Gerenciamento de usuários" },
-      { name: "Channels", description: "Gerenciamento de canais" },
+      { name: "Channels", description: "Gerenciamento de canais (requer auth)" },
       { name: "Contents", description: "Gerenciamento de conteúdos" },
       { name: "Categories", description: "Categorias de conteúdo" },
       { name: "Schedules", description: "Programação de canais" },
       { name: "Playlists", description: "Playlists dos canais" },
       { name: "Voices", description: "Vozes disponíveis para TTS" },
-      { name: "Radio", description: "Player de rádio ao vivo" },
+      { name: "Radio", description: "Player de rádio ao vivo (requer auth)" },
       { name: "IA", description: "Geração de conteúdo com inteligência artificial" },
       { name: "TTS", description: "Síntese de voz (Text-to-Speech)" },
       { name: "Admin", description: "Administração de filas e workers" },
@@ -627,10 +628,91 @@ const options: swaggerJsdoc.Options = {
           responses: { "204": { description: "Playlist removida" }, "404": { description: "Não encontrada" } },
         },
       },
+      "/public/radio/current": {
+        get: {
+          tags: ["Público"],
+          summary: "Conteúdo em reprodução no momento",
+          description: "Endpoint público — não requer autenticação. Ideal para players e widgets embutidos.",
+          parameters: [{ name: "channel_id", in: "query", schema: { type: "integer" }, description: "ID do canal (usa DEFAULT_CHANNEL_ID se omitido)" }],
+          responses: {
+            "200": {
+              description: "Conteúdo atual e metadados",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          current: { $ref: "#/components/schemas/Content" },
+                          schedule: { $ref: "#/components/schemas/Schedule" },
+                          channel: { $ref: "#/components/schemas/Channel" },
+                          startedAt: { type: "string", format: "date-time" },
+                          source: { type: "string", enum: ["playlist", "schedule"] },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/public/radio/next": {
+        get: {
+          tags: ["Público"],
+          summary: "Próximo conteúdo na fila",
+          description: "Endpoint público — não requer autenticação.",
+          parameters: [{ name: "channel_id", in: "query", schema: { type: "integer" } }],
+          responses: { "200": { description: "Próximo conteúdo", content: { "application/json": { schema: { $ref: "#/components/schemas/Content" } } } } },
+        },
+      },
+      "/public/radio/schedule": {
+        get: {
+          tags: ["Público"],
+          summary: "Programação completa do dia",
+          description: "Endpoint público — não requer autenticação.",
+          parameters: [{ name: "channel_id", in: "query", schema: { type: "integer" } }],
+          responses: {
+            "200": {
+              description: "Lista de slots de programação do dia",
+              content: { "application/json": { schema: { type: "array", items: { $ref: "#/components/schemas/Schedule" } } } },
+            },
+          },
+        },
+      },
+      "/public/channels": {
+        get: {
+          tags: ["Público"],
+          summary: "Listar canais ativos",
+          description: "Endpoint público — não requer autenticação. Retorna canais disponíveis para o player.",
+          parameters: [
+            { name: "page", in: "query", schema: { type: "integer", default: 1 } },
+            { name: "limit", in: "query", schema: { type: "integer", default: 20 } },
+          ],
+          responses: { "200": { description: "Lista de canais", content: { "application/json": { schema: { $ref: "#/components/schemas/PaginatedResponse" } } } } },
+        },
+      },
+      "/public/stream": {
+        get: {
+          tags: ["Público"],
+          summary: "Stream de áudio do canal",
+          description: "Redireciona para a URL de áudio do conteúdo em reprodução no canal. Endpoint público.",
+          parameters: [{ name: "channel_id", in: "query", schema: { type: "integer" }, description: "ID do canal" }],
+          responses: {
+            "302": { description: "Redireciona para a URL do áudio atual" },
+            "404": { description: "Nenhum conteúdo em reprodução no momento" },
+          },
+        },
+      },
       "/radio/current": {
         get: {
           tags: ["Radio"],
-          summary: "Conteúdo em reprodução no momento (público — sem auth)",
+          summary: "Conteúdo em reprodução (requer auth)",
+          security: [{ bearerAuth: [] }],
           parameters: [{ name: "channel_id", in: "query", schema: { type: "integer" }, description: "ID do canal (usa DEFAULT_CHANNEL_ID se omitido)" }],
           responses: {
             "200": {
@@ -662,7 +744,8 @@ const options: swaggerJsdoc.Options = {
       "/radio/next": {
         get: {
           tags: ["Radio"],
-          summary: "Próximo conteúdo na fila (público)",
+          summary: "Próximo conteúdo na fila (requer auth)",
+          security: [{ bearerAuth: [] }],
           parameters: [{ name: "channel_id", in: "query", schema: { type: "integer" } }],
           responses: { "200": { description: "Próximo conteúdo", content: { "application/json": { schema: { $ref: "#/components/schemas/Content" } } } } },
         },
@@ -670,7 +753,8 @@ const options: swaggerJsdoc.Options = {
       "/radio/schedule": {
         get: {
           tags: ["Radio"],
-          summary: "Programação completa do dia para o canal (público)",
+          summary: "Programação completa do dia (requer auth)",
+          security: [{ bearerAuth: [] }],
           parameters: [{ name: "channel_id", in: "query", schema: { type: "integer" } }],
           responses: {
             "200": {

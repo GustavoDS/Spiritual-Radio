@@ -27,7 +27,7 @@ app.use(cors({ origin: env.corsOrigins, credentials: true }));
 app.use(requestIdMiddleware);
 app.use(globalLimiter);
 
-app.use(express.static(env.uploadDir, {
+app.use("/uploads", express.static(env.uploadDir, {
   maxAge: "1d",
   index: false,
   dotfiles: "deny",
