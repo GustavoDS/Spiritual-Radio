@@ -4,6 +4,7 @@ import { connectDatabase } from "./config/database.js";
 import { redis } from "./config/redis.js";
 import { syncDatabase } from "./models/index.js";
 import { env } from "./config/env.js";
+import { startContentProcessingWorker, startVoiceSynthesisWorker } from "./jobs/contentProcessingJob.js";
 
 const rawPort = process.env["PORT"];
 
@@ -26,6 +27,14 @@ async function bootstrap(): Promise<void> {
     await redis.connect().catch(() => {
       logger.warn("Redis connection failed – queues will be unavailable");
     });
+
+    try {
+      startContentProcessingWorker();
+      startVoiceSynthesisWorker();
+      logger.info("BullMQ workers started (content-processing, voice-synthesis)");
+    } catch (err) {
+      logger.warn("BullMQ workers could not start – Redis may be unavailable", { err });
+    }
   } catch (err) {
     logger.warn("Startup service error (app will still run)", { err });
   }
