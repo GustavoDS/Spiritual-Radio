@@ -152,7 +152,6 @@ const options: swaggerJsdoc.Options = {
                     nome: { type: "string", example: "João Silva" },
                     email: { type: "string", format: "email", example: "joao@example.com" },
                     senha: { type: "string", minLength: 6, example: "minhasenha123" },
-                    role: { type: "string", enum: ["admin", "user", "editor"], default: "user" },
                   },
                 },
               },
