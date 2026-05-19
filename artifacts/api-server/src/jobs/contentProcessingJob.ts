@@ -32,13 +32,13 @@ export function startContentProcessingWorker(): Worker {
         const voice = await Voice.findByPk(voiceId);
         if (voice) {
           logger.info("Starting voice synthesis via content worker", { contentId, voiceId });
-          const { filePath } = await runSynthesis(text, voice);
+          const { url } = await runSynthesis(text, voice);
 
           await Content.update(
-            { audio_url: filePath },
+            { audio_url: url },
             { where: { id: contentId } },
           );
-          logger.info("Audio saved and content updated", { contentId, filePath });
+          logger.info("Audio saved and content updated", { contentId, url });
         } else {
           logger.warn("Voice not found for content processing", { voiceId });
         }
@@ -71,12 +71,12 @@ export function startVoiceSynthesisWorker(): Worker {
         throw new Error(`Voice ${voiceId} not found`);
       }
 
-      const { filePath } = await runSynthesis(text, voice);
-      logger.info("Voice synthesis complete", { jobId: job.id, filePath });
+      const { url } = await runSynthesis(text, voice);
+      logger.info("Voice synthesis complete", { jobId: job.id, url });
 
       if (contentId) {
-        await Content.update({ audio_url: filePath }, { where: { id: contentId } });
-        logger.info("Content audio_url updated", { contentId, filePath });
+        await Content.update({ audio_url: url }, { where: { id: contentId } });
+        logger.info("Content audio_url updated", { contentId, url });
       }
 
       await job.updateProgress(100);

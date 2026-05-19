@@ -11,12 +11,21 @@ import { env } from "./config/env.js";
 
 const app: Express = express();
 
+app.set("trust proxy", 1);
+
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
 }));
 
 app.use(cors({ origin: env.corsOrigins, credentials: true }));
 app.use(globalLimiter);
+
+app.use(express.static(env.uploadDir, {
+  maxAge: "1d",
+  index: false,
+  dotfiles: "deny",
+}));
+
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 

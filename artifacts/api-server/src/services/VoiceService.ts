@@ -6,6 +6,7 @@ import { voiceSynthesisQueue } from "../queues/index.js";
 import { env } from "../config/env.js";
 import { synthesizeOpenAI } from "./tts/openaiTts.js";
 import { synthesizeElevenLabs } from "./tts/elevenlabsTts.js";
+import { filePathToUrl } from "../utils/fileUrl.js";
 
 export interface SynthesisOptions {
   text: string;
@@ -30,10 +31,6 @@ function buildOutputPath(): string {
   ensureDir(audioDir);
   const filename = `tts-${Date.now()}-${Math.random().toString(36).slice(2)}.mp3`;
   return path.join(audioDir, filename);
-}
-
-function filePathToUrl(filePath: string): string {
-  return "/" + filePath.replace(/\\/g, "/");
 }
 
 export async function runSynthesis(text: string, voice: Voice): Promise<{ filePath: string; url: string }> {
@@ -95,9 +92,7 @@ export class VoiceService {
   }
 
   async getVoiceForTime(hora: number): Promise<Voice | null> {
-    const periodo =
-      hora >= 6 && hora < 12 ? "manha" : hora >= 12 && hora < 18 ? "tarde" : "noite";
-
+    const periodo = hora >= 6 && hora < 12 ? "manha" : hora >= 12 && hora < 18 ? "tarde" : "noite";
     return Voice.findOne({ where: { horario_preferencial: periodo, ativo: true } });
   }
 }

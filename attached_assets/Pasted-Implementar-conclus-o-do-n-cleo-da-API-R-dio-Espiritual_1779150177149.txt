@@ -1,0 +1,244 @@
+Implementar conclusão do núcleo da API Rádio Espiritual Inteligente.
+
+IMPORTANTE:
+
+- Não alterar arquitetura existente
+- Não remover funcionalidades atuais
+- Preservar compatibilidade dos endpoints
+- Preservar Swagger
+- Gerar relatório final
+
+=========================================
+BLOQUEADORES MVP
+=========================================
+
+1. Servir uploads via HTTP
+
+Adicionar express.static:
+
+/uploads/audio
+/uploads/images
+
+Atualizar:
+
+audio_url
+imagem_url
+
+Salvar URLs acessíveis:
+
+Exemplo:
+
+/uploads/audio/audio.mp3
+
+Não salvar caminhos físicos do disco.
+
+---
+
+2. Criar PlaylistItem
+
+Criar modelo:
+
+PlaylistItem
+
+Campos:
+
+id
+playlist_id
+content_id
+ordem
+hora_execucao
+
+Relacionamentos:
+
+Playlist
+→ hasMany PlaylistItems
+
+PlaylistItem
+→ belongsTo Playlist
+
+PlaylistItem
+→ belongsTo Content
+
+Content
+→ hasMany PlaylistItems
+
+---
+
+3. Ajustar relacionamentos
+
+Adicionar:
+
+onDelete:"SET NULL"
+
+Content → Category
+Content → Channel
+
+---
+
+4. Segurança JWT
+
+Se:
+
+NODE_ENV=production
+
+e
+
+JWT_SECRET=="changeme-jwt-secret"
+
+Bloquear inicialização.
+
+---
+
+5. Graceful shutdown
+
+Capturar:
+
+SIGINT
+SIGTERM
+
+Fechar:
+
+- workers BullMQ
+- Redis
+- Sequelize
+
+Registrar logs.
+
+---
+
+6. Corrigir hardcode
+
+Remover:
+
+channelId=1
+
+Adicionar:
+
+DEFAULT_CHANNEL_ID
+
+Atualizar:
+
+.env.example
+
+=========================================
+PRODUÇÃO
+=========================================
+
+1. Remover:
+
+sync({alter:true})
+
+Criar migrations Sequelize:
+
+users
+channels
+categories
+contents
+voices
+schedules
+playlists
+playlist_items
+
+---
+
+2. Criar índices:
+
+contents:
+(channel_id)
+(categoria_id)
+(ativo)
+(tipo)
+
+schedules:
+(channel_id)
+(horario_inicio)
+
+voices:
+(provider)
+(horario_preferencial)
+
+playlists:
+(channel_id)
+(data)
+
+---
+
+3. Rate limit Redis Store
+
+Substituir MemoryStore.
+
+---
+
+4. Uploads seguros
+
+Implementar:
+
+magic bytes
+
+Usar:
+
+file-type
+
+Bloquear arquivos inválidos.
+
+---
+
+5. Remover:
+
+GET /api/download-projeto
+
+=========================================
+RÁDIO CONTÍNUA
+=========================================
+
+1. Criar:
+
+startScheduleWorker()
+
+Responsável por:
+
+- gerar programação futura
+- gerar playlists
+- atualizar slots
+
+---
+
+2. Criar:
+
+PlaylistService
+
+Métodos:
+
+generatePlaylist()
+
+buildPlaylist()
+
+getCurrentTrack()
+
+getNextTrack()
+
+---
+
+3. Integrar:
+
+Schedule
+↓
+Playlist
+↓
+PlaylistItems
+↓
+RadioService
+
+---
+
+4. Atualizar RadioService
+
+Implementar:
+
+avanço automático de faixa
+
+Sem WebSocket ainda
+
+=========================================
+
+Ao finalizar gerar relatório técnico.

@@ -23,6 +23,16 @@ export function initPlaylist(sequelize: Sequelize): void {
         comment: "Data da playlist (YYYY-MM-DD)",
       },
     },
-    { sequelize, modelName: "Playlist", tableName: "playlists", timestamps: true },
+    {
+      sequelize,
+      modelName: "Playlist",
+      tableName: "playlists",
+      timestamps: true,
+      indexes: [
+        { fields: ["channel_id"] },
+        { fields: ["data"] },
+        { unique: true, fields: ["channel_id", "data"] },
+      ],
+    },
   );
 }

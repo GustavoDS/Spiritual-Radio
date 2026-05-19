@@ -27,6 +27,16 @@ export function initVoice(sequelize: Sequelize): void {
       },
       ativo: { type: DataTypes.BOOLEAN, defaultValue: true },
     },
-    { sequelize, modelName: "Voice", tableName: "voices", timestamps: true },
+    {
+      sequelize,
+      modelName: "Voice",
+      tableName: "voices",
+      timestamps: true,
+      indexes: [
+        { fields: ["provider"] },
+        { fields: ["horario_preferencial"] },
+        { fields: ["ativo"] },
+      ],
+    },
   );
 }

@@ -1,6 +1,12 @@
 import rateLimit from "express-rate-limit";
 import { env } from "../config/env.js";
 
+/**
+ * Rate limiters use in-memory store by default.
+ * For horizontal scaling with Redis, configure a RedisStore here once
+ * REDIS_URL is set to a reliable Redis instance.
+ */
+
 export const globalLimiter = rateLimit({
   windowMs: env.rateLimitWindowMs,
   limit: env.rateLimitMax,

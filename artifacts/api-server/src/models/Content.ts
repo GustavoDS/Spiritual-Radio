@@ -29,6 +29,17 @@ export function initContent(sequelize: Sequelize): void {
       ativo: { type: DataTypes.BOOLEAN, defaultValue: true, allowNull: false },
       channel_id: { type: DataTypes.INTEGER, allowNull: true, references: { model: "channels", key: "id" } },
     },
-    { sequelize, modelName: "Content", tableName: "contents", timestamps: true },
+    {
+      sequelize,
+      modelName: "Content",
+      tableName: "contents",
+      timestamps: true,
+      indexes: [
+        { fields: ["channel_id"] },
+        { fields: ["categoria_id"] },
+        { fields: ["ativo"] },
+        { fields: ["tipo"] },
+      ],
+    },
   );
 }

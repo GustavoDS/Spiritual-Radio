@@ -27,6 +27,16 @@ export function initSchedule(sequelize: Sequelize): void {
         comment: "Ex: devocional, louvor, pregacao, meditacao",
       },
     },
-    { sequelize, modelName: "Schedule", tableName: "schedules", timestamps: true },
+    {
+      sequelize,
+      modelName: "Schedule",
+      tableName: "schedules",
+      timestamps: true,
+      indexes: [
+        { fields: ["channel_id"] },
+        { fields: ["horario_inicio"] },
+        { fields: ["channel_id", "horario_inicio"] },
+      ],
+    },
   );
 }
