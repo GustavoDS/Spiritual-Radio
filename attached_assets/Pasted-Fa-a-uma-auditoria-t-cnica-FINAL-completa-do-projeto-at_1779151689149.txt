@@ -1,0 +1,291 @@
+Faça uma auditoria técnica FINAL completa do projeto atual sem modificar nenhum código.
+
+Objetivo:
+Verificar se a API Rádio Espiritual Inteligente está realmente pronta para:
+
+1. integração frontend (Lovable)
+2. deploy em produção
+3. rádio contínua
+4. IA
+5. TTS
+6. uso real por usuários
+
+IMPORTANTE:
+
+- Não modificar código
+- Não instalar dependências
+- Não corrigir automaticamente
+- Não gerar código
+- Apenas analisar
+
+==================================================
+1. ARQUITETURA
+==================================================
+
+Validar:
+
+- organização do projeto
+- separação de responsabilidades
+- acoplamento
+- dependências circulares
+- serviços
+- workers
+- filas
+- escalabilidade
+
+Classificar:
+
+OK
+Atenção
+Crítico
+
+Explicar motivo.
+
+==================================================
+2. BANCO DE DADOS
+==================================================
+
+Validar:
+
+- entidades
+- relacionamentos
+- índices
+- migrations
+- integridade referencial
+- constraints
+- crescimento futuro
+
+Para cada entidade informar:
+
+OK
+Atenção
+Crítico
+
+Listar:
+
+- entidades faltantes
+- redundâncias
+- riscos
+
+==================================================
+3. APIs
+==================================================
+
+Validar:
+
+- consistência REST
+- autenticação
+- respostas
+- paginação
+- filtros
+- códigos HTTP
+- Swagger
+
+Listar:
+
+- endpoints faltantes
+- endpoints redundantes
+- endpoints inseguros
+
+==================================================
+4. SEGURANÇA
+==================================================
+
+Validar:
+
+JWT
+Refresh token
+Logout
+Roles
+Rate limit
+Redis Store
+Helmet
+Validações
+CORS
+Uploads
+Magic bytes
+Blacklist
+Proteção brute force
+Proteção XSS
+Segurança produção
+
+Classificar:
+
+Implementado
+Parcial
+Não implementado
+
+==================================================
+5. FILAS E WORKERS
+==================================================
+
+Validar:
+
+BullMQ
+Workers
+Retry
+Backoff
+Redis
+DLQ
+Monitoramento
+Graceful shutdown
+
+Identificar gargalos.
+
+==================================================
+6. IA
+==================================================
+
+Validar:
+
+generateContent()
+generateScript()
+summarize()
+
+Verificar:
+
+- providers
+- timeout
+- retry
+- cache
+- tratamento de erro
+
+==================================================
+7. TTS
+==================================================
+
+Validar:
+
+- providers
+- síntese
+- cache
+- retry
+- timeout
+- armazenamento
+- geração de arquivos
+
+==================================================
+8. RÁDIO CONTÍNUA
+==================================================
+
+Validar:
+
+Schedule
+Playlist
+PlaylistItems
+RadioService
+ScheduleWorker
+
+Responder:
+
+A rádio consegue funcionar sozinha 24h?
+
+Explicar:
+
+- fluxo completo
+- gargalos
+- riscos
+
+==================================================
+9. PERFORMANCE
+==================================================
+
+Validar:
+
+- cache Redis
+- consultas
+- índices
+- paginação
+- N+1
+- uploads
+- filas
+- consumo memória
+
+==================================================
+10. DEPLOY
+==================================================
+
+Validar:
+
+.env
+logs
+workers
+uploads
+migrations
+healthcheck
+Redis
+produção
+
+Classificar:
+
+Pronto
+Parcial
+Bloqueador
+
+==================================================
+11. FRONTEND READINESS
+==================================================
+
+Responder:
+
+Frontend Lovable consegue conectar imediatamente?
+
+Verificar:
+
+- CORS
+- autenticação
+- uploads
+- player
+- URLs
+- respostas API
+
+==================================================
+12. SCORE FINAL
+==================================================
+
+Gerar nota:
+
+Arquitetura: X/10
+Banco: X/10
+APIs: X/10
+Segurança: X/10
+Performance: X/10
+IA: X/10
+TTS: X/10
+Rádio contínua: X/10
+Deploy: X/10
+
+Nota geral:
+
+X/100
+
+==================================================
+13. ÚLTIMOS BLOQUEADORES
+==================================================
+
+Listar somente:
+
+- críticos
+- alta prioridade
+
+Ignorar melhorias cosméticas.
+
+==================================================
+14. CONCLUSÃO
+==================================================
+
+Responder objetivamente:
+
+Pronto para frontend:
+SIM/NÃO
+
+Pronto para deploy:
+SIM/NÃO
+
+Pronto para rádio 24h:
+SIM/NÃO
+
+Pronto para produção:
+SIM/NÃO
+
+Explicar motivo.
