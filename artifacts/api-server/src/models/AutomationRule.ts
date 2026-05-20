@@ -38,7 +38,6 @@ export function initAutomationRule(sequelize: Sequelize): void {
         type: DataTypes.INTEGER,
         allowNull: true,
         defaultValue: null,
-        references: { model: "channels", key: "id" },
       },
       period: {
         type: DataTypes.ENUM(
