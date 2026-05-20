@@ -10,6 +10,7 @@ import {
   getRadioStatus,
   getSystemHealth,
   generateContentTts,
+  getStorageStatus,
 } from "./admin-ops.controller.js";
 import {
   runNowSchema,
@@ -26,6 +27,7 @@ router.post("/schedule/run-now", adminOpsLimiter, validate(runNowSchema), runSch
 
 router.get("/radio/status", getRadioStatus);
 router.get("/system/health", getSystemHealth);
+router.get("/storage/status", getStorageStatus);
 
 router.post("/contents/:id/generate-tts", adminOpsLimiter, validate(generateTtsSchema), generateContentTts);
 

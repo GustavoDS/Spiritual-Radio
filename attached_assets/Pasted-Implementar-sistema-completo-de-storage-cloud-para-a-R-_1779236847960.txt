@@ -1,0 +1,141 @@
+Implementar sistema completo de storage cloud para a Rádio Espiritual Inteligente com suporte a Cloudflare R2 e compatibilidade S3.
+
+IMPORTANTE:
+Não quebrar uploads locais atuais.
+Implementar provider abstraction.
+Permitir fallback local.
+Migrar de forma incremental.
+
+Objetivo:
+Eliminar dependência de filesystem local e tornar uploads/TTS production-ready.
+
+1. Criar arquitetura de storage providers
+
+Criar:
+src/services/storage/
+
+Providers:
+
+* LocalStorageProvider
+* R2StorageProvider
+* S3StorageProvider
+
+Criar interface comum:
+StorageProvider
+
+Métodos:
+
+* upload()
+* delete()
+* exists()
+* getPublicUrl()
+* getSignedUrl()
+* move()
+* copy()
+
+2. Configuração por ENV
+
+Adicionar:
+STORAGE_PROVIDER=local|r2|s3
+
+Cloudflare R2:
+R2_ACCOUNT_ID
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+R2_BUCKET
+R2_PUBLIC_URL
+
+AWS S3:
+S3_REGION
+S3_BUCKET
+S3_ACCESS_KEY_ID
+S3_SECRET_ACCESS_KEY
+
+3. Migrar uploads atuais
+
+Integrar provider em:
+
+* uploads áudio
+* uploads imagem
+* TTS generated audio
+* thumbnails futuras
+
+4. Alterar fluxo TTS
+
+Hoje:
+uploads/audio/*.mp3
+
+Novo:
+
+* upload automático cloud
+* salvar URL pública CDN
+* remover temporário local
+* fallback seguro
+
+5. CDN
+
+URLs devem ser:
+https://cdn.domain.com/audio/...
+ou:
+https://pub-xxxxx.r2.dev/...
+
+Nunca caminhos locais.
+
+6. Cleanup automático
+
+Implementar:
+
+* remoção arquivos órfãos
+* verificação integridade
+* retry upload falho
+* logs storage
+
+7. Segurança
+
+* validação MIME
+* limite tamanho
+* nomes aleatórios
+* signed URLs privadas quando necessário
+
+8. Performance
+
+* multipart upload
+* streaming upload
+* evitar buffer memória gigante
+
+9. Compatibilidade
+
+Não quebrar:
+
+* audio_url existentes
+* uploads locais antigos
+* frontend atual
+
+10. Admin operacional
+
+Adicionar endpoint:
+GET /api/admin/storage/status
+
+Retornar:
+
+* provider atual
+* bucket
+* uso aproximado
+* uploads hoje
+* falhas
+* cloud status
+
+11. Swagger
+
+Documentar novos endpoints e comportamento URLs.
+
+12. Objetivo final
+
+Toda mídia da plataforma deve funcionar:
+
+* sem depender disco local
+* com CDN
+* escalável
+* persistente
+* pronta para produção cloud
+* segura para deploy/restart

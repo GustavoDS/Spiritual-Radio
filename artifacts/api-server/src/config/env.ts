@@ -27,9 +27,18 @@ export const env = {
   defaultChannelId: Number(process.env["DEFAULT_CHANNEL_ID"] ?? 1),
   syncDb: process.env["SYNC_DB"] === "true",
 
-  storageProvider: (process.env["STORAGE_PROVIDER"] ?? "local") as "local" | "s3",
+  storageProvider: (process.env["STORAGE_PROVIDER"] ?? "local") as "local" | "s3" | "r2",
+
+  // AWS S3
   s3Bucket: process.env["S3_BUCKET"] ?? "",
   s3Region: process.env["S3_REGION"] ?? "us-east-1",
   s3AccessKeyId: process.env["S3_ACCESS_KEY_ID"] ?? "",
   s3SecretAccessKey: process.env["S3_SECRET_ACCESS_KEY"] ?? "",
+
+  // Cloudflare R2 (S3-compatible)
+  r2AccountId: process.env["R2_ACCOUNT_ID"] ?? "",
+  r2AccessKeyId: process.env["R2_ACCESS_KEY_ID"] ?? "",
+  r2SecretAccessKey: process.env["R2_SECRET_ACCESS_KEY"] ?? "",
+  r2Bucket: process.env["R2_BUCKET"] ?? "",
+  r2PublicUrl: process.env["R2_PUBLIC_URL"] ?? "",
 };

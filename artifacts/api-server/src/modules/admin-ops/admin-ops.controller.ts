@@ -1,5 +1,6 @@
 import fs from "fs";
 import type { Request, Response } from "express";
+import { Op } from "sequelize";
 import { ok, created, badRequest } from "../../utils/response.js";
 import { logger } from "../../lib/logger.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
@@ -15,6 +16,7 @@ import { env } from "../../config/env.js";
 import type { ContactPrioridade } from "../../models/ContactMessage.js";
 import type { UpdatePriorityInput, RunNowInput, GenerateTtsInput } from "./admin-ops.validators.js";
 import { realtimeService } from "../../services/RealtimeService.js";
+import { storageProvider } from "../../storage/index.js";
 
 async function safeQueueCount(queue: { getJobCounts: () => Promise<Record<string, number>> }): Promise<Record<string, number> | null> {
   try {
@@ -272,6 +274,77 @@ export async function getSystemHealth(_req: Request, res: Response): Promise<voi
       nodeVersion: process.version,
     },
     uptime: Math.floor(process.uptime()),
+    checkedAt: new Date().toISOString(),
+  });
+}
+
+/* ─── Storage Status ────────────────────────────────────────────────────── */
+
+export async function getStorageStatus(_req: Request, res: Response): Promise<void> {
+  const today = new Date().toISOString().split("T")[0]!;
+  const todayStart = new Date(`${today}T00:00:00.000Z`);
+
+  const [totalWithAudio, totalWithImage, uploadsToday] = await Promise.all([
+    Content.count({ where: { audio_url: { [Op.ne]: null } } }),
+    Content.count({ where: { imagem_url: { [Op.ne]: null } } }),
+    Content.count({
+      where: {
+        createdAt: { [Op.gte]: todayStart },
+        [Op.or]: [
+          { audio_url: { [Op.ne]: null } },
+          { imagem_url: { [Op.ne]: null } },
+        ],
+      },
+    }),
+  ]);
+
+  let storageOk = true;
+  let storageError: string | null = null;
+  let localDirExists: boolean | null = null;
+
+  if (env.storageProvider === "local") {
+    try {
+      localDirExists = fs.existsSync(env.uploadDir);
+      if (localDirExists) fs.accessSync(env.uploadDir, fs.constants.W_OK);
+    } catch (err) {
+      storageOk = false;
+      storageError = err instanceof Error ? err.message : String(err);
+    }
+  } else {
+    // For cloud providers, do a lightweight reachability check via exists()
+    try {
+      await storageProvider.exists("__healthcheck__");
+    } catch (err) {
+      storageOk = false;
+      storageError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  const bucket =
+    env.storageProvider === "r2" ? env.r2Bucket
+    : env.storageProvider === "s3" ? env.s3Bucket
+    : env.uploadDir;
+
+  const publicUrl =
+    env.storageProvider === "r2" ? env.r2PublicUrl
+    : env.storageProvider === "s3"
+      ? (env.s3Region === "us-east-1"
+        ? `https://${env.s3Bucket}.s3.amazonaws.com`
+        : `https://${env.s3Bucket}.s3.${env.s3Region}.amazonaws.com`)
+    : null;
+
+  ok(res, {
+    provider: env.storageProvider,
+    bucket,
+    publicUrl,
+    status: storageOk ? "ok" : "error",
+    error: storageError,
+    ...(env.storageProvider === "local" ? { localDirExists } : {}),
+    stats: {
+      contentsWithAudio: totalWithAudio,
+      contentsWithImage: totalWithImage,
+      uploadsToday,
+    },
     checkedAt: new Date().toISOString(),
   });
 }

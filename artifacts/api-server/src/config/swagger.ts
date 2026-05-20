@@ -1439,6 +1439,69 @@ const options: swaggerJsdoc.Options = {
           },
         },
       },
+      "/admin/storage/status": {
+        get: {
+          tags: ["Admin"],
+          summary: "Status do sistema de storage (admin only)",
+          description: [
+            "Retorna o provider ativo, bucket/diretório, URL pública e estatísticas de mídia armazenada.",
+            "",
+            "**Providers suportados:** `local` | `s3` | `r2`",
+            "",
+            "- `local` — arquivos em disco, serve via Express static. `status: ok` se o diretório existir e for gravável.",
+            "- `s3` — AWS S3. `status: ok` se a chamada `HeadObject(__healthcheck__)` responder (pode ser 404, que confirma conectividade).",
+            "- `r2` — Cloudflare R2 (S3-compatible). Mesmo critério do S3.",
+          ].join("\n"),
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Status do storage",
+              content: {
+                "application/json": {
+                  schema: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      data: {
+                        type: "object",
+                        properties: {
+                          provider: { type: "string", enum: ["local", "s3", "r2"], example: "local" },
+                          bucket: { type: "string", example: "uploads", description: "Bucket S3/R2 ou diretório local" },
+                          publicUrl: { type: "string", nullable: true, example: "https://cdn.domain.com", description: "URL pública base do CDN (null para local)" },
+                          status: { type: "string", enum: ["ok", "error"] },
+                          error: { type: "string", nullable: true },
+                          localDirExists: { type: "boolean", nullable: true, description: "Apenas para provider=local" },
+                          stats: {
+                            type: "object",
+                            properties: {
+                              contentsWithAudio: { type: "integer", description: "Total de conteúdos com audio_url" },
+                              contentsWithImage: { type: "integer", description: "Total de conteúdos com imagem_url" },
+                              uploadsToday: { type: "integer", description: "Conteúdos criados hoje com mídia" },
+                            },
+                          },
+                          checkedAt: { type: "string", format: "date-time" },
+                        },
+                      },
+                    },
+                  },
+                  example: {
+                    success: true,
+                    data: {
+                      provider: "r2",
+                      bucket: "radio-espiritual",
+                      publicUrl: "https://pub-xxxx.r2.dev",
+                      status: "ok",
+                      error: null,
+                      stats: { contentsWithAudio: 142, contentsWithImage: 38, uploadsToday: 5 },
+                      checkedAt: "2026-05-20T10:00:00.000Z",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/admin/contents/{id}/generate-tts": {
         post: {
           tags: ["Contents"],

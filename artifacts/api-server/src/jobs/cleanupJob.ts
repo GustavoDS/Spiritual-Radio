@@ -43,8 +43,13 @@ export function startCleanupWorker(): Worker {
       const dryRun = job.data.dryRun ?? false;
       logger.info("CleanupJob started", { dryRun });
 
-      if (env.storageProvider === "s3") {
-        logger.info("CleanupJob: S3 cleanup not implemented — skipping");
+      if (env.storageProvider !== "local") {
+        // Cloud providers (S3, R2): cleanup requires URL-to-key mapping for referenced files.
+        // Skipping automatic orphan deletion to avoid accidental removal of active CDN assets.
+        // Implement cloud cleanup by normalising audio_url/imagem_url back to storage keys.
+        logger.info("CleanupJob: cloud provider cleanup skipped — implement key normalisation for S3/R2", {
+          provider: env.storageProvider,
+        });
         return;
       }
 

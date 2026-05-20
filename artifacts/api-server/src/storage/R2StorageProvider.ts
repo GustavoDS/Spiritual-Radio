@@ -29,17 +29,25 @@ function getMimeType(key: string, provided?: string): string {
   return map[ext] ?? "application/octet-stream";
 }
 
-export class S3StorageProvider implements StorageProvider {
+/**
+ * Cloudflare R2 storage provider (S3-compatible API).
+ * Requires: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, R2_PUBLIC_URL
+ */
+export class R2StorageProvider implements StorageProvider {
   private readonly client: S3Client;
   private readonly bucket: string;
+  private readonly publicUrl: string;
 
   constructor() {
-    this.bucket = env.s3Bucket;
+    this.bucket = env.r2Bucket;
+    this.publicUrl = env.r2PublicUrl.replace(/\/$/, "");
+
     this.client = new S3Client({
-      region: env.s3Region,
+      region: "auto",
+      endpoint: `https://${env.r2AccountId}.r2.cloudflarestorage.com`,
       credentials: {
-        accessKeyId: env.s3AccessKeyId,
-        secretAccessKey: env.s3SecretAccessKey,
+        accessKeyId: env.r2AccessKeyId,
+        secretAccessKey: env.r2SecretAccessKey,
       },
     });
   }
@@ -63,17 +71,17 @@ export class S3StorageProvider implements StorageProvider {
     try {
       fs.unlinkSync(localPath);
     } catch {
-      logger.warn("S3StorageProvider: failed to delete local file after upload", { localPath });
+      logger.warn("R2StorageProvider: failed to delete local temp file after upload", { localPath });
     }
 
     const url = this.getUrl(key);
-    logger.info("S3StorageProvider.upload complete", { key, url });
+    logger.info("R2StorageProvider.upload complete", { key, url, bucket: this.bucket });
     return url;
   }
 
   async delete(key: string): Promise<void> {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
-    logger.debug("S3StorageProvider.delete", { key });
+    logger.debug("R2StorageProvider.delete", { key });
   }
 
   async exists(key: string): Promise<boolean> {
@@ -86,15 +94,12 @@ export class S3StorageProvider implements StorageProvider {
   }
 
   getUrl(key: string): string {
-    if (env.s3Region === "us-east-1") {
-      return `https://${this.bucket}.s3.amazonaws.com/${key}`;
-    }
-    return `https://${this.bucket}.s3.${env.s3Region}.amazonaws.com/${key}`;
+    return `${this.publicUrl}/${key}`;
   }
 
   async getSignedUrl(key: string, _expiresInSeconds = 3600): Promise<string> {
-    // S3 public buckets serve objects via getUrl().
-    // For private objects, install @aws-sdk/s3-request-presigner and use its getSignedUrl().
+    // R2 public buckets serve all objects publicly — return public URL.
+    // For private buckets, install @aws-sdk/s3-request-presigner and use getSignedUrl().
     return this.getUrl(key);
   }
 
@@ -112,7 +117,7 @@ export class S3StorageProvider implements StorageProvider {
         Key: toKey,
       }),
     );
-    logger.debug("S3StorageProvider.copy", { fromKey, toKey });
+    logger.debug("R2StorageProvider.copy", { fromKey, toKey });
     return this.getUrl(toKey);
   }
 
