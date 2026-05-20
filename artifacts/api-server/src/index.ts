@@ -7,6 +7,8 @@ import { env } from "./config/env.js";
 import { startContentProcessingWorker, startVoiceSynthesisWorker } from "./jobs/contentProcessingJob.js";
 import { startScheduleWorker } from "./jobs/scheduleJob.js";
 import { startCleanupWorker } from "./jobs/cleanupJob.js";
+import { startAutomationWorker } from "./jobs/automationJob.js";
+import { automationService } from "./services/AutomationService.js";
 import { scheduleQueue, cleanupQueue } from "./queues/index.js";
 import { Channel, Playlist } from "./models/index.js";
 import { playlistService } from "./services/PlaylistService.js";
@@ -199,7 +201,8 @@ async function bootstrap(): Promise<void> {
         workers.push(startVoiceSynthesisWorker());
         workers.push(startScheduleWorker());
         workers.push(startCleanupWorker());
-        logger.info("BullMQ workers started (content-processing, voice-synthesis, schedule, cleanup)");
+        workers.push(startAutomationWorker());
+        logger.info("BullMQ workers started (content-processing, voice-synthesis, schedule, cleanup, automation)");
 
         await setupCronJobs();
         await generateImmediatePlaylists();
@@ -209,6 +212,9 @@ async function bootstrap(): Promise<void> {
     } else {
       logger.warn("BullMQ workers NOT started — Redis unavailable. Queues, cron and cache disabled.");
     }
+
+    // Automation timer: runs every 30 min regardless of Redis availability
+    automationService.startTimer(30 * 60 * 1000);
   } catch (err) {
     logger.warn("Startup service error (app will still run)", { err });
   }

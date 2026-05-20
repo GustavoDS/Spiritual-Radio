@@ -32,6 +32,16 @@ export const scheduleQueue = new Queue("schedule", {
   },
 });
 
+export const automationQueue = new Queue("automation", {
+  connection: redisQueueConnection,
+  defaultJobOptions: {
+    attempts: 2,
+    backoff: { type: "exponential", delay: 5000 },
+    removeOnComplete: 50,
+    removeOnFail: 20,
+  },
+});
+
 export const cleanupQueue = new Queue("cleanup", {
   connection: redisQueueConnection,
   defaultJobOptions: {
@@ -52,6 +62,9 @@ scheduleQueue.on("error", (err) =>
 );
 cleanupQueue.on("error", (err) =>
   logger.warn("cleanupQueue error", { err: err.message }),
+);
+automationQueue.on("error", (err) =>
+  logger.warn("automationQueue error", { err: err.message }),
 );
 
 logger.info("BullMQ queues initialized");

@@ -16,6 +16,7 @@ import messagesRouter from "../modules/messages/messages.routes.js";
 import adminOpsRouter from "../modules/admin-ops/admin-ops.routes.js";
 import realtimeRouter from "../modules/realtime/realtime.routes.js";
 import analyticsRouter from "../modules/analytics/analytics.routes.js";
+import automationRouter from "../modules/automation/automation.routes.js";
 
 const router: IRouter = Router();
 
@@ -37,6 +38,7 @@ router.use("/tts", ttsRouter);
 router.use("/admin/messages", messagesRouter);
 router.use("/admin", adminOpsRouter);
 router.use("/admin/analytics", analyticsRouter);
+router.use("/admin/automation", automationRouter);
 router.use("/realtime", realtimeRouter);
 
 export default router;

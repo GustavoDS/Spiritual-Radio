@@ -1,0 +1,163 @@
+Implementar sistema de automação inteligente de programação da Rádio Espiritual Inteligente.
+
+IMPORTANTE:
+Não remover programação manual existente.
+Adicionar camada inteligente complementar.
+Não quebrar playlists/schedules atuais.
+
+Objetivo:
+Permitir que a rádio gere, organize e adapte automaticamente conteúdos conforme contexto, horário e operação.
+
+1. Motor de automação inteligente
+
+Criar:
+AutomationService
+
+Responsável por:
+
+* geração automática
+* seleção contextual
+* programação dinâmica
+* regras inteligentes
+* fallback operacional
+
+2. Regras por horário
+
+Permitir configurar:
+
+MANHÃ
+
+* voz calma
+* devocional
+* reflexão leve
+* motivacional
+
+TARDE
+
+* mensagens rápidas
+* ensinamentos
+* louvor leve
+
+NOITE
+
+* oração
+* voz acolhedora
+* reflexão profunda
+* descanso espiritual
+
+MADRUGADA
+
+* instrumental
+* leitura bíblica
+* meditação
+
+3. Geração automática IA
+
+Criar rotinas automáticas:
+
+* gerar devocional do dia
+* gerar oração automática
+* gerar reflexão contextual
+* gerar mensagens curtas
+* gerar introduções rádio
+
+Usar:
+
+* IA existente
+* TTS existente
+* playlists existentes
+
+4. Auto publicação
+
+Após geração:
+
+* criar Content automaticamente
+* gerar TTS automaticamente
+* salvar mídia
+* adicionar tags
+* associar canal
+* inserir playlist
+
+5. Programação dinâmica
+
+Permitir:
+
+* preenchimento automático de gaps
+* fallback quando playlist vazia
+* fallback quando conteúdo falha
+* substituição automática conteúdo indisponível
+
+6. Automação baseada em analytics
+
+Usar analytics para:
+
+* detectar horários pico
+* detectar conteúdos mais executados
+* ajustar frequência
+* evitar repetição excessiva
+
+7. Regras anti-repetição
+
+Implementar:
+
+* cooldown conteúdos
+* cooldown vozes
+* rotação inteligente
+* evitar repetição recente
+
+8. Eventos especiais
+
+Permitir automações:
+
+* domingo
+* feriados
+* campanhas
+* eventos especiais
+* horários específicos
+
+9. Painel admin automação
+
+Criar endpoints:
+GET /api/admin/automation/status
+GET /api/admin/automation/rules
+PUT /api/admin/automation/rules
+POST /api/admin/automation/run-now
+
+10. SSE realtime
+
+Emitir:
+
+* automation_started
+* automation_completed
+* automation_failed
+* auto_content_generated
+* auto_playlist_updated
+
+11. Logs e analytics
+
+Rastrear:
+
+* conteúdos gerados automaticamente
+* falhas automação
+* custo IA automação
+* tempo geração
+* uso TTS automático
+
+12. Segurança operacional
+
+Implementar:
+
+* limites geração
+* evitar loops infinitos
+* circuit breaker IA/TTS
+* retries controlados
+
+13. Objetivo final
+
+A rádio deve conseguir:
+
+* operar sozinha por longos períodos
+* adaptar programação automaticamente
+* gerar conteúdo automaticamente
+* manter fluxo contínuo
+* parecer uma rádio viva e inteligente

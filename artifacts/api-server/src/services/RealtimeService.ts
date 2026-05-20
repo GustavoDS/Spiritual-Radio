@@ -24,7 +24,12 @@ export type AdminEvent =
   | "radio_status_changed"
   | "queue_failed"
   | "queue_recovered"
-  | "system_warning";
+  | "system_warning"
+  | "automation_started"
+  | "automation_completed"
+  | "automation_failed"
+  | "auto_content_generated"
+  | "auto_playlist_updated";
 
 export type RealtimeEventType = PublicEvent | AdminEvent;
 

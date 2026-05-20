@@ -1439,6 +1439,213 @@ const options: swaggerJsdoc.Options = {
           },
         },
       },
+      "/admin/automation/status": {
+        get: {
+          tags: ["Automation"],
+          summary: "Status do motor de automação (admin only)",
+          description: "Retorna estado atual do timer, circuit breakers de IA/TTS, período corrente, estatísticas globais e últimas 10 execuções.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Status da automação",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      isRunning: false,
+                      lastRunAt: "2026-05-20T09:30:00.000Z",
+                      lastRunStatus: "completed",
+                      lastRunId: "uuid-...",
+                      currentPeriod: "morning",
+                      timerActive: true,
+                      timerIntervalMs: 1800000,
+                      circuitBreaker: {
+                        ai: { open: false, failures: 0, lastFailureAt: null, opensAt: null },
+                        tts: { open: false, failures: 0, lastFailureAt: null, opensAt: null },
+                      },
+                      stats: { totalContentsGenerated: 42, totalContentsFailed: 2, runsToday: 4 },
+                      recentLogs: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/automation/rules": {
+        get: {
+          tags: ["Automation"],
+          summary: "Listar regras de automação por período (admin only)",
+          description: "Retorna regras configuradas + defaults para períodos sem configuração. Períodos: `madrugada`, `morning`, `afternoon`, `evening`, `night`, `sunday`, `holiday`, `special`.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Regras de automação",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      configured: [],
+                      defaults: [
+                        { period: "morning", source: "default", enabled: true, description: "05:00–11:59 — Devocional, reflexão leve, motivacional" },
+                      ],
+                      totalPeriods: 8,
+                      configuredCount: 0,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        put: {
+          tags: ["Automation"],
+          summary: "Criar/atualizar regras de automação (admin only)",
+          description: [
+            "Aceita uma regra única ou array de regras.",
+            "",
+            "**Exemplo de regra única:**",
+            "```json",
+            "{ \"period\": \"morning\", \"enabled\": true, \"generation_limit\": 4, \"cooldown_hours\": 3 }",
+            "```",
+            "",
+            "**Exemplo com array:**",
+            "```json",
+            "{ \"rules\": [ { \"period\": \"morning\", \"enabled\": true }, { \"period\": \"evening\", \"tts_enabled\": false } ] }",
+            "```",
+          ].join("\n"),
+          security: [{ bearerAuth: [] }],
+          requestBody: {
+            required: true,
+            content: {
+              "application/json": {
+                schema: {
+                  type: "object",
+                  properties: {
+                    period: { type: "string", enum: ["madrugada", "morning", "afternoon", "evening", "night", "sunday", "holiday", "special"] },
+                    channel_id: { type: "integer", nullable: true },
+                    enabled: { type: "boolean" },
+                    content_types: { type: "array", items: { type: "string" } },
+                    topics: { type: "array", items: { type: "string" } },
+                    voice_style: { type: "string", enum: ["calm", "welcoming", "meditative", "energetic"] },
+                    min_duration_sec: { type: "integer" },
+                    max_duration_sec: { type: "integer" },
+                    generation_limit: { type: "integer", description: "Máximo de conteúdos gerados por execução" },
+                    cooldown_hours: { type: "integer" },
+                    auto_generate: { type: "boolean" },
+                    tts_enabled: { type: "boolean" },
+                    rules: { type: "array", items: { type: "object" } },
+                  },
+                },
+              },
+            },
+          },
+          responses: {
+            "200": {
+              description: "Regras atualizadas",
+              content: {
+                "application/json": {
+                  example: { success: true, data: { updated: [], count: 1 } },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/automation/run-now": {
+        post: {
+          tags: ["Automation"],
+          summary: "Disparar automação imediatamente (admin only)",
+          description: "Inicia a automação em background e retorna imediatamente. Acompanhe o resultado via SSE `/api/realtime/admin` — eventos `automation_started`, `automation_completed`, `auto_content_generated`.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Automação iniciada",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      message: "Automação iniciada. Acompanhe via SSE /api/realtime/admin.",
+                      runId: "manual-1748000000000",
+                      triggeredBy: "manual",
+                      period: "morning",
+                      ts: "2026-05-20T10:00:00.000Z",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/automation/run-sync": {
+        post: {
+          tags: ["Automation"],
+          summary: "Disparar automação e aguardar resultado (admin only)",
+          description: "Executa a automação de forma síncrona e retorna o resultado completo. Pode demorar vários segundos dependendo do número de canais e conteúdos gerados.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Resultado da automação",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      runId: "uuid-...",
+                      period: "morning",
+                      triggeredBy: "manual",
+                      channelsProcessed: 2,
+                      contentsGenerated: 4,
+                      contentsFailed: 0,
+                      costUsdEst: 0.0003,
+                      durationMs: 4500,
+                      status: "completed",
+                      errors: [],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/automation/logs": {
+        get: {
+          tags: ["Automation"],
+          summary: "Histórico de execuções da automação (admin only)",
+          description: "Retorna log de todas as execuções com status, conteúdos gerados, custo IA estimado e duração.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "limit", in: "query", schema: { type: "integer", default: 50, maximum: 200 } },
+            { name: "period", in: "query", schema: { type: "string", enum: ["madrugada", "morning", "afternoon", "evening", "night", "sunday", "holiday", "special"] } },
+            { name: "status", in: "query", schema: { type: "string", enum: ["started", "running", "completed", "failed", "partial"] } },
+          ],
+          responses: {
+            "200": {
+              description: "Histórico de automação",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      logs: [
+                        { id: 1, run_id: "uuid-...", period: "morning", status: "completed", contents_generated: 3, cost_usd_est: "0.00030000", duration_ms: 4200 },
+                      ],
+                      total: 1,
+                      limit: 50,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/admin/analytics/radio": {
         get: {
           tags: ["Analytics"],

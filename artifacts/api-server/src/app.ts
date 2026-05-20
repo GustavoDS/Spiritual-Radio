@@ -13,7 +13,7 @@ import { globalLimiter } from "./middlewares/rateLimiter.js";
 import { requestIdMiddleware } from "./middlewares/requestId.js";
 import { authenticate, requireAdmin } from "./middlewares/auth.js";
 import { env } from "./config/env.js";
-import { contentProcessingQueue, voiceSynthesisQueue, scheduleQueue, cleanupQueue } from "./queues/index.js";
+import { contentProcessingQueue, voiceSynthesisQueue, scheduleQueue, cleanupQueue, automationQueue } from "./queues/index.js";
 
 const app: Express = express();
 
@@ -55,6 +55,7 @@ createBullBoard({
     new BullMQAdapter(voiceSynthesisQueue),
     new BullMQAdapter(scheduleQueue),
     new BullMQAdapter(cleanupQueue),
+    new BullMQAdapter(automationQueue),
   ],
   serverAdapter: bullServerAdapter,
 });
