@@ -7,6 +7,7 @@ import { validateIntegerId } from "../middlewares/validateId.js";
 import { validate } from "../middlewares/validate.js";
 import { contactLimiter } from "../middlewares/rateLimiter.js";
 import { contactSchema, prayerRequestSchema } from "../modules/messages/messages.validators.js";
+import { getLiveM3u8, getNowPlaying, ping, getPublicPlaylist } from "../modules/stream/stream.controller.js";
 
 const router = Router();
 
@@ -29,5 +30,11 @@ router.get("/stream", async (req: Request, res: Response): Promise<void> => {
   }
   res.redirect(302, status.current.audio_url);
 });
+
+// HLS streaming endpoints (no auth required — public radio)
+router.get("/stream/ping", ping);
+router.get("/stream/:channelId/live.m3u8", getLiveM3u8);
+router.get("/stream/:channelId/now-playing.json", getNowPlaying);
+router.get("/stream/:channelId/playlist.json", getPublicPlaylist);
 
 export default router;

@@ -1439,6 +1439,203 @@ const options: swaggerJsdoc.Options = {
           },
         },
       },
+      "/public/stream/{channelId}/live.m3u8": {
+        get: {
+          tags: ["Streaming"],
+          summary: "HLS playlist ao vivo do canal (público)",
+          description: [
+            "Retorna um M3U8 HLS com as próximas 10 faixas da fila do AutoDJ.",
+            "",
+            "**Compatível com:** iOS, Android, Safari, VLC, ffmpeg, smart speakers via HLS.",
+            "",
+            "Cada conexão registra uma sessão de listener. Use o token retornado no header `X-AutoDJ-Session` para manter a sessão viva via `GET /api/public/stream/ping?token=...`.",
+            "",
+            "**Exemplo de URL:** `GET /api/public/stream/1/live.m3u8`",
+          ].join("\n"),
+          parameters: [
+            { name: "channelId", in: "path", required: true, schema: { type: "integer" } },
+          ],
+          responses: {
+            "200": {
+              description: "HLS M3U8 playlist",
+              headers: {
+                "X-AutoDJ-Session": { schema: { type: "string" }, description: "Token da sessão do listener" },
+                "X-Channel-Id": { schema: { type: "string" } },
+              },
+              content: {
+                "application/vnd.apple.mpegurl": {
+                  example: [
+                    "#EXTM3U",
+                    "#EXT-X-VERSION:3",
+                    "#EXT-X-TARGETDURATION:300",
+                    "#EXT-X-ALLOW-CACHE:NO",
+                    "#EXTINF:120,Devocional Matinal",
+                    "https://cdn.example.com/uploads/audio/track1.mp3",
+                    "#EXTINF:90,Oração do Dia",
+                    "https://cdn.example.com/uploads/audio/track2.mp3",
+                  ].join("\n"),
+                },
+              },
+            },
+            "404": { description: "Canal não encontrado ou inativo" },
+          },
+        },
+      },
+      "/public/stream/{channelId}/now-playing.json": {
+        get: {
+          tags: ["Streaming"],
+          summary: "Metadados da faixa atual do canal (público)",
+          description: "Retorna faixa atual, próxima faixa, progresso em segundos, tempo restante e número de listeners. Atualiza a cada requisição — ideal para polling ou SSE.",
+          parameters: [
+            { name: "channelId", in: "path", required: true, schema: { type: "integer" } },
+          ],
+          responses: {
+            "200": {
+              description: "Metadados em tempo real",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      channel: { id: 1, nome: "Rádio Espiritual", ativo: true },
+                      current: { contentId: 5, titulo: "Devocional Matinal", tipo: "devocional", audioUrl: "/uploads/audio/track.mp3", duracao: 120 },
+                      next: { contentId: 6, titulo: "Oração do Dia", tipo: "oracao" },
+                      upNext: [],
+                      isPlaying: true,
+                      startedAt: "2026-05-20T06:00:00.000Z",
+                      progressSec: 45,
+                      remainingSec: 75,
+                      listenerCount: 12,
+                      fetchedAt: "2026-05-20T06:00:45.000Z",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/public/stream/ping": {
+        get: {
+          tags: ["Streaming"],
+          summary: "Keepalive de sessão de listener",
+          description: "Mantenha a sessão de listener ativa enviando ping a cada 30 segundos. Sessões sem ping por 5 minutos são automaticamente removidas.",
+          parameters: [
+            { name: "token", in: "query", required: true, schema: { type: "string" }, description: "Token retornado no header X-AutoDJ-Session ao conectar ao M3U8" },
+          ],
+          responses: {
+            "200": { description: "Sessão mantida", content: { "application/json": { example: { success: true, alive: true } } } },
+          },
+        },
+      },
+      "/admin/stream/status": {
+        get: {
+          tags: ["Streaming"],
+          summary: "Status do AutoDJ em todos os canais (admin only)",
+          description: "Retorna estado do AutoDJ por canal: faixa atual, tamanho da fila, fallback mode, listeners, pico de listeners e estatísticas globais.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Status do streaming",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      watcherActive: true,
+                      totalChannels: 3,
+                      playingChannels: 3,
+                      totalListeners: 47,
+                      channels: [
+                        { channelId: 1, nome: "Principal", isPlaying: true, fallbackMode: false, queueSize: 18, listenerCount: 32, peakListeners: 89, currentTrack: { titulo: "Devocional Matinal", progressSec: 45, remainingSec: 75 } },
+                      ],
+                      checkedAt: "2026-05-20T06:00:45.000Z",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/stream/listeners": {
+        get: {
+          tags: ["Streaming"],
+          summary: "Sessões de listeners ativas (admin only)",
+          description: "Lista todas as sessões de ouvintes com tempo de escuta acumulado, canal e user-agent. IPs são parcialmente ocultados por privacidade.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Sessões ativas",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      totalActive: 12,
+                      byChannel: [{ channelId: 1, listeners: 10, peak: 89 }, { channelId: 2, listeners: 2, peak: 14 }],
+                      sessions: [{ token: "uuid-...", channelId: 1, connectedAt: "...", totalListenedMs: 120000, ip: "192.168.x.x" }],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/stream/channels": {
+        get: {
+          tags: ["Streaming"],
+          summary: "Canais de stream com links M3U8 (admin only)",
+          description: "Lista todos os canais ativos com as URLs de stream M3U8, now-playing e status do AutoDJ.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Canais de stream",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      channels: [
+                        { id: 1, nome: "Principal", m3u8Path: "/api/public/stream/1/live.m3u8", nowPlayingPath: "/api/public/stream/1/now-playing.json", isPlaying: true, currentTrack: "Devocional Matinal", listeners: 32 },
+                      ],
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/stream/restart/{channelId}": {
+        post: {
+          tags: ["Streaming"],
+          summary: "Reiniciar AutoDJ de um canal (admin only)",
+          description: "Reinicia completamente o AutoDJ do canal — zera a fila, recarrega do banco e começa do início. Útil após adicionar novo conteúdo ou resolver problemas.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "channelId", in: "path", required: true, schema: { type: "integer" } },
+          ],
+          responses: {
+            "200": { description: "Canal reiniciado", content: { "application/json": { example: { success: true, data: { message: "Canal 1 reiniciado", isPlaying: true, currentTrack: "Devocional Matinal", queueSize: 18 } } } } },
+          },
+        },
+      },
+      "/admin/stream/reload/{channelId}": {
+        post: {
+          tags: ["Streaming"],
+          summary: "Recarregar playlist de um canal sem interromper (admin only)",
+          description: "Recarrega a playlist do banco de dados mantendo a faixa atual. As próximas faixas são substituídas sem interromper o que está tocando.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "channelId", in: "path", required: true, schema: { type: "integer" } },
+          ],
+          responses: {
+            "200": { description: "Playlist recarregada", content: { "application/json": { example: { success: true, data: { message: "Playlist do canal 1 recarregada", queueSize: 15, nextTracks: ["Oração", "Reflexão", "Louvor"] } } } } },
+          },
+        },
+      },
       "/admin/automation/status": {
         get: {
           tags: ["Automation"],

@@ -1,0 +1,139 @@
+Implementar infraestrutura de streaming broadcast real para a Rádio Espiritual Inteligente.
+
+IMPORTANTE:
+Não quebrar player atual.
+Manter compatibilidade com playlists existentes.
+Adicionar camada broadcast profissional incremental.
+
+Objetivo:
+Transformar a plataforma em uma rádio online real com stream contínuo 24/7.
+
+1. Servidor de streaming
+
+Adicionar suporte para:
+
+* Icecast
+  OU
+* Liquidsoap + Icecast
+
+Arquitetura:
+Automation → Playlist → AutoDJ → Stream contínuo
+
+2. Stream contínuo real
+
+Criar stream persistente:
+
+* sem troca manual de faixas
+* sem gaps
+* reprodução contínua
+* múltiplos listeners simultâneos
+
+3. AutoDJ inteligente
+
+Criar AutoDJService:
+
+* consome playlists
+* consome automação IA
+* injeta TTS
+* injeta vinhetas
+* fallback automático
+* crossfade
+
+4. HLS streaming
+
+Adicionar:
+
+* HLS (.m3u8)
+* segmentos .ts
+* suporte mobile
+* baixa latência opcional
+
+Endpoints públicos:
+GET /public/stream/live.m3u8
+
+5. Metadata realtime
+
+Atualizar automaticamente:
+
+* faixa atual
+* artwork
+* título
+* descrição
+* locutor IA
+
+Integrar:
+
+* SSE
+* analytics
+* player frontend
+
+6. Multi canal
+
+Cada canal:
+
+* stream independente
+* AutoDJ independente
+* analytics separados
+
+7. Resiliência
+
+Implementar:
+
+* fallback playlist
+* fallback silêncio
+* reconnect automático
+* watchdog stream
+* restart automático
+
+8. Analytics streaming
+
+Rastrear:
+
+* listeners simultâneos
+* pico listeners
+* tempo médio escuta
+* conexões
+* bitrate
+* consumo banda
+
+9. Admin operacional
+
+Criar endpoints:
+GET /api/admin/stream/status
+POST /api/admin/stream/restart
+POST /api/admin/stream/reload
+GET /api/admin/stream/listeners
+
+10. Dockerização
+
+Adicionar containers:
+
+* icecast
+* liquidsoap/autodj
+
+Persistência:
+
+* configs
+* logs
+* mounts áudio
+
+11. Frontend
+
+Player deve:
+
+* usar stream contínuo real
+* não trocar src a cada faixa
+* metadata via SSE
+* reconexão automática
+
+12. Objetivo final
+
+A plataforma deve operar como:
+
+* rádio online profissional real
+* broadcast contínuo
+* 24/7
+* escalável
+* pronta para apps mobile
+* pronta para smart speakers
+* pronta para milhares de listeners

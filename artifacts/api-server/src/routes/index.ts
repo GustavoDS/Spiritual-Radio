@@ -17,6 +17,7 @@ import adminOpsRouter from "../modules/admin-ops/admin-ops.routes.js";
 import realtimeRouter from "../modules/realtime/realtime.routes.js";
 import analyticsRouter from "../modules/analytics/analytics.routes.js";
 import automationRouter from "../modules/automation/automation.routes.js";
+import { streamAdminRouter } from "../modules/stream/stream.routes.js";
 
 const router: IRouter = Router();
 
@@ -39,6 +40,7 @@ router.use("/admin/messages", messagesRouter);
 router.use("/admin", adminOpsRouter);
 router.use("/admin/analytics", analyticsRouter);
 router.use("/admin/automation", automationRouter);
+router.use("/admin/stream", streamAdminRouter);
 router.use("/realtime", realtimeRouter);
 
 export default router;

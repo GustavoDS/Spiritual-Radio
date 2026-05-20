@@ -9,6 +9,8 @@ import { startScheduleWorker } from "./jobs/scheduleJob.js";
 import { startCleanupWorker } from "./jobs/cleanupJob.js";
 import { startAutomationWorker } from "./jobs/automationJob.js";
 import { automationService } from "./services/AutomationService.js";
+import { autoDjService } from "./services/AutoDJService.js";
+import { streamSessionStore } from "./services/StreamSessionStore.js";
 import { scheduleQueue, cleanupQueue } from "./queues/index.js";
 import { Channel, Playlist } from "./models/index.js";
 import { playlistService } from "./services/PlaylistService.js";
@@ -215,6 +217,11 @@ async function bootstrap(): Promise<void> {
 
     // Automation timer: runs every 30 min regardless of Redis availability
     automationService.startTimer(30 * 60 * 1000);
+
+    // AutoDJ: continuous streaming layer, runs regardless of Redis
+    autoDjService.startWatcher();
+    streamSessionStore.startCleanup();
+    logger.info("AutoDJ watcher and stream session store started");
   } catch (err) {
     logger.warn("Startup service error (app will still run)", { err });
   }
