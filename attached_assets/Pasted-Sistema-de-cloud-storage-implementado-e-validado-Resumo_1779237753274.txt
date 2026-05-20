@@ -1,0 +1,66 @@
+Sistema de cloud storage implementado e validado. Resumo completo:
+
+Cloud Storage — Implementado
+Arquitetura de providers
+Três providers com interface comum StorageProvider:
+
+Provider	Env var	Quando usar
+local	STORAGE_PROVIDER=local (padrão)	Desenvolvimento
+s3	STORAGE_PROVIDER=s3	AWS S3
+r2	STORAGE_PROVIDER=r2	Cloudflare R2 — recomendado produção
+Interface completa (8 métodos):
+
+upload(localPath, key, options?)  → Promise<string>  // URL pública
+delete(key)                        → Promise<void>
+exists(key)                        → Promise<boolean>
+getUrl(key)                        → string
+getSignedUrl(key, expiresIn?)      → Promise<string>
+move(fromKey, toKey)               → Promise<string>
+copy(fromKey, toKey)               → Promise<string>
+listFiles(subdir)                  → Promise<string[]>
+
+R2StorageProvider (novo)
+Endpoint automático: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+Usa @aws-sdk/client-s3 + @aws-sdk/lib-storage (multipart streaming)
+Upload: envia arquivo → deleta temp local → retorna URL CDN pública
+listFiles() com paginação via ListObjectsV2Command
+move() / copy() via CopyObjectCommand
+MIME type detectado automaticamente pela extensão
+Upload flow corrigido em contents.controller.ts
+Antes (local disk direto, bypassa cloud):
+
+audio_url: files?.["audio"]?.[0]?.path
+  ? filePathToUrl(files["audio"][0].path)  // ← nunca chegava ao S3/R2
+
+Agora (passa pelo provider):
+
+await storageProvider.upload(file.path, buildStorageKey("audio", file.originalname))
+// local → /uploads/audio/filename.mp3 (no-op, já estava em disco)
+// s3/r2 → https://cdn.domain.com/audio/filename.mp3 (upload real)
+
+GET /api/admin/storage/status (novo endpoint)
+{
+  "provider": "local",
+  "bucket": "uploads",
+  "publicUrl": null,
+  "status": "ok",
+  "localDirExists": true,
+  "stats": {
+    "contentsWithAudio": 1,
+    "contentsWithImage": 0,
+    "uploadsToday": 1
+  },
+  "checkedAt": "2026-05-20T00:33:31.930Z"
+}
+
+Verifica reachability: local → fs.accessSync(W_OK), cloud → exists("__healthcheck__")
+Contagens via DB (sem Redis)
+Configuração R2 para produção (.env.example atualizado)
+STORAGE_PROVIDER=r2
+R2_ACCOUNT_ID=abc123def456
+R2_ACCESS_KEY_ID=<token R2>
+R2_SECRET_ACCESS_KEY=<secret R2>
+R2_BUCKET=radio-espiritual
+R2_PUBLIC_URL=https://pub-xxxx.r2.dev
+
+A troca é feita apenas mudando STORAGE_PROVIDER — zero alteração de código.
