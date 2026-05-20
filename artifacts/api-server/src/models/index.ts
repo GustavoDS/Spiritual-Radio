@@ -8,6 +8,8 @@ import { Schedule, initSchedule } from "./Schedule.js";
 import { Playlist, initPlaylist } from "./Playlist.js";
 import { PlaylistItem, initPlaylistItem } from "./PlaylistItem.js";
 import { ContactMessage, initContactMessage } from "./ContactMessage.js";
+import { RadioPlay, initRadioPlay } from "./RadioPlay.js";
+import { AiEvent, initAiEvent } from "./AiEvent.js";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -20,6 +22,8 @@ initSchedule(sequelize);
 initPlaylist(sequelize);
 initPlaylistItem(sequelize);
 initContactMessage(sequelize);
+initRadioPlay(sequelize);
+initAiEvent(sequelize);
 
 Content.belongsTo(Category, { foreignKey: "categoria_id", as: "categoria", onDelete: "SET NULL" });
 Category.hasMany(Content, { foreignKey: "categoria_id", as: "contents" });
@@ -50,4 +54,4 @@ export async function syncDatabase(force = false): Promise<void> {
   await sequelize.sync({ force, alter: !force });
 }
 
-export { sequelize, User, Channel, Category, Content, Voice, Schedule, Playlist, PlaylistItem, ContactMessage };
+export { sequelize, User, Channel, Category, Content, Voice, Schedule, Playlist, PlaylistItem, ContactMessage, RadioPlay, AiEvent };

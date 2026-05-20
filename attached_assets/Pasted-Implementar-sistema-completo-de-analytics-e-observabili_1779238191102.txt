@@ -1,0 +1,140 @@
+Implementar sistema completo de analytics e observabilidade para a Rádio Espiritual Inteligente.
+
+IMPORTANTE:
+Não quebrar endpoints existentes.
+Não alterar fluxos atuais.
+Adicionar camada de métricas, analytics e monitoramento operacional.
+
+Objetivo:
+Transformar a plataforma em sistema observável e mensurável em tempo real.
+
+1. Analytics Rádio
+
+Criar rastreamento para:
+
+* execuções de conteúdos
+* canais mais tocados
+* horários pico
+* conteúdos mais executados
+* duração média escuta
+* listeners ativos aproximados
+* sessões player
+* eventos stream
+
+Criar entidade:
+RadioAnalytics
+
+2. Analytics IA
+
+Rastrear:
+
+* gerações IA
+* provider utilizado
+* tempo geração
+* falhas
+* tokens estimados
+* custo estimado
+* TTS gerados
+* provider TTS
+* duração áudio gerado
+
+Criar entidade:
+AiAnalytics
+
+3. Analytics Mensagens
+
+Rastrear:
+
+* volume mensagens
+* pedidos oração
+* urgência
+* tempo resposta admin
+* mensagens por período
+* mensagens por tipo
+
+Criar entidade:
+MessageAnalytics
+
+4. Endpoints admin analytics
+
+Criar:
+GET /api/admin/analytics/radio
+GET /api/admin/analytics/ai
+GET /api/admin/analytics/messages
+GET /api/admin/analytics/system
+
+Filtros:
+
+* hoje
+* 7 dias
+* 30 dias
+* custom range
+
+5. Métricas sistema
+
+Monitorar:
+
+* memória
+* CPU
+* Redis
+* Postgres
+* queues
+* SSE connections
+* uploads
+* storage usage
+* workers ativos
+* falhas jobs
+
+6. Logs estruturados
+
+Melhorar Winston:
+
+* requestId
+* correlationId
+* contexto usuário
+* contexto canal
+* contexto conteúdo
+* logs analytics
+
+7. Alertas operacionais
+
+Detectar:
+
+* rádio offline
+* Redis down
+* queue falhando
+* TTS falhando muito
+* IA falhando
+* storage indisponível
+* excesso mensagens urgentes
+
+8. SSE analytics events
+
+Emitir:
+
+* analytics_updated
+* system_warning
+* system_recovered
+
+9. Performance
+
+* agregações eficientes
+* evitar queries pesadas
+* cache analytics recentes
+* batch inserts quando possível
+
+10. Swagger
+
+Documentar todos endpoints analytics.
+
+11. Objetivo final
+
+A plataforma deve permitir:
+
+* monitoramento operacional
+* acompanhamento crescimento
+* métricas IA
+* métricas rádio
+* métricas usuários
+* observabilidade real
+* decisões baseadas em dados

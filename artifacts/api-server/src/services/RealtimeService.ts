@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import type { Response } from "express";
 import { logger } from "../lib/logger.js";
+import { RadioPlay } from "../models/index.js";
 
 /* ─── Event Types ─────────────────────────────────────────────────────────── */
 
@@ -130,6 +131,16 @@ class RealtimeService {
             }
             if (currentId !== null) {
               this.broadcastPublic("radio_online", { channelId, ts: new Date().toISOString() });
+              // Record play event for analytics (non-blocking)
+              RadioPlay.create({
+                channel_id: channelId,
+                content_id: currentId,
+                titulo: current?.titulo ?? "(desconhecido)",
+                tipo: "desconhecido",
+                played_at: new Date(),
+              }).catch((err) => {
+                logger.debug("RadioPlay.create failed (non-fatal)", { err: (err as Error).message });
+              });
             } else {
               this.broadcastPublic("radio_offline", { channelId, ts: new Date().toISOString() });
             }

@@ -1439,6 +1439,157 @@ const options: swaggerJsdoc.Options = {
           },
         },
       },
+      "/admin/analytics/radio": {
+        get: {
+          tags: ["Analytics"],
+          summary: "Analytics de execuções de rádio (admin only)",
+          description: "Plays por canal, horários pico, conteúdos mais tocados e tendência diária.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "period", in: "query", schema: { type: "string", enum: ["today", "7d", "30d"], default: "7d" } },
+            { name: "from", in: "query", schema: { type: "string", format: "date" }, description: "Data inicial (YYYY-MM-DD). Ignora period." },
+            { name: "to", in: "query", schema: { type: "string", format: "date" }, description: "Data final (YYYY-MM-DD). Ignora period." },
+          ],
+          responses: {
+            "200": {
+              description: "Analytics de rádio",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      period: { from: "2026-05-13T00:00:00.000Z", to: "2026-05-20T00:00:00.000Z", label: "7d" },
+                      summary: { totalPlays: 842, todayPlays: 47, activeChannels: 3 },
+                      byChannel: [{ channel_id: 1, plays: 512 }, { channel_id: 2, plays: 330 }],
+                      peakHours: [{ hour: 7, plays: 98 }, { hour: 12, plays: 87 }],
+                      topContents: [{ content_id: 5, titulo: "Pregação Matinal", tipo: "pregacao", plays: 64 }],
+                      recentPlays: [],
+                      generatedAt: "2026-05-20T10:00:00.000Z",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/analytics/ai": {
+        get: {
+          tags: ["Analytics"],
+          summary: "Analytics de geração IA e TTS (admin only)",
+          description: "Eventos de geração de conteúdo IA e síntese TTS: providers, custo estimado, falhas, duração e áudio gerado.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "period", in: "query", schema: { type: "string", enum: ["today", "7d", "30d"], default: "7d" } },
+            { name: "from", in: "query", schema: { type: "string", format: "date" } },
+            { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          ],
+          responses: {
+            "200": {
+              description: "Analytics de IA",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      period: { label: "7d" },
+                      summary: {
+                        totalEvents: 38,
+                        todayEvents: 4,
+                        successCount: 35,
+                        failureCount: 3,
+                        successRate: 92,
+                        totalCostUsd: "0.004200",
+                        totalTokensEst: 28000,
+                        avgDurationMs: 3200,
+                        maxDurationMs: 8700,
+                      },
+                      tts: { totalSyntheses: 22, totalAudioSec: "1840.0", totalAudioMin: "30.7" },
+                      byType: [],
+                      byProvider: [],
+                      recentFailures: [],
+                      generatedAt: "2026-05-20T10:00:00.000Z",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/analytics/messages": {
+        get: {
+          tags: ["Analytics"],
+          summary: "Analytics de mensagens e pedidos de oração (admin only)",
+          description: "Volume de mensagens, urgência, tempo médio de resposta e tendência diária — derivados da tabela contact_messages.",
+          security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: "period", in: "query", schema: { type: "string", enum: ["today", "7d", "30d"], default: "7d" } },
+            { name: "from", in: "query", schema: { type: "string", format: "date" } },
+            { name: "to", in: "query", schema: { type: "string", format: "date" } },
+          ],
+          responses: {
+            "200": {
+              description: "Analytics de mensagens",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      period: { label: "7d" },
+                      summary: { total: 24, unread: 7, urgentPending: 2, avgResponseMs: 3600000, avgResponseMin: 60 },
+                      byTipo: [{ tipo: "contato", count: 15 }, { tipo: "pedido_oracao", count: 9 }],
+                      byStatus: [],
+                      byPrioridade: [],
+                      dailyTrend: [],
+                      generatedAt: "2026-05-20T10:00:00.000Z",
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+      "/admin/analytics/system": {
+        get: {
+          tags: ["Analytics"],
+          summary: "Métricas de sistema em tempo real (admin only)",
+          description: "Snapshot ao vivo: memória, CPU, uptime, status de Redis/Postgres, contagens de filas BullMQ, conexões SSE ativas e contadores do dia.",
+          security: [{ bearerAuth: [] }],
+          responses: {
+            "200": {
+              description: "Métricas de sistema",
+              content: {
+                "application/json": {
+                  example: {
+                    success: true,
+                    data: {
+                      checkedAt: "2026-05-20T10:00:00.000Z",
+                      uptime: 14400,
+                      process: {
+                        nodeVersion: "v24.0.0",
+                        pid: 1234,
+                        memoryMb: { heapUsed: 82, heapTotal: 128, rss: 210, external: 4 },
+                        cpuMs: { user: 12000, system: 3000 },
+                      },
+                      services: {
+                        database: { ok: true, latencyMs: 2 },
+                        redis: { ok: false, latencyMs: null },
+                        bullmq: { available: false, queues: {} },
+                      },
+                      realtime: { totalConnections: 12, adminConnections: 2, publicConnections: 10 },
+                      storage: { provider: "local", bucket: "uploads" },
+                      today: { radioPlays: 47, aiEvents: 4 },
+                      config: { nodeEnv: "production", aiProvider: "openai", ttsProvider: "openai" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       "/admin/storage/status": {
         get: {
           tags: ["Admin"],

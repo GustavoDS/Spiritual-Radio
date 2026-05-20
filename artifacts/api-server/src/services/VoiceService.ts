@@ -2,13 +2,44 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { logger } from "../lib/logger.js";
-import { Voice } from "../models/index.js";
+import { Voice, AiEvent } from "../models/index.js";
 import { voiceSynthesisQueue } from "../queues/index.js";
 import { env } from "../config/env.js";
 import { synthesizeOpenAI } from "./tts/openaiTts.js";
 import { synthesizeElevenLabs } from "./tts/elevenlabsTts.js";
 import { storageProvider } from "../storage/index.js";
 import { redis } from "../config/redis.js";
+
+function estimateTtsCost(provider: string, chars: number): number {
+  if (provider === "elevenlabs") return chars * 0.00003; // ~$30/1M chars
+  return chars * 0.000015; // OpenAI TTS-1: ~$15/1M chars
+}
+
+function recordTtsEvent(opts: {
+  provider: string;
+  charsIn: number;
+  durationMs: number;
+  audioDurationSec: number | null;
+  success: boolean;
+  error?: string;
+  contentId?: number;
+}): void {
+  AiEvent.create({
+    event_type: "tts_synthesis",
+    provider: opts.provider,
+    model: env.ttsModel || null,
+    chars_in: opts.charsIn,
+    tokens_est: null,
+    cost_usd_est: opts.success ? estimateTtsCost(opts.provider, opts.charsIn) : 0,
+    duration_ms: opts.durationMs,
+    success: opts.success,
+    error: opts.error ?? null,
+    content_id: opts.contentId ?? null,
+    audio_duration_sec: opts.audioDurationSec,
+  }).catch((err) => {
+    logger.debug("TTS AiEvent.create failed (non-fatal)", { err: (err as Error).message });
+  });
+}
 
 export interface SynthesisOptions {
   text: string;
@@ -55,11 +86,24 @@ export async function runSynthesis(text: string, voice: Voice): Promise<{ filePa
   const voiceIdentifier = voice.voice_id_externo ?? voice.nome;
   logger.info("runSynthesis started", { provider, voiceIdentifier, textLength: text.length });
 
+  const t0 = Date.now();
   let audioBuffer: Buffer;
-  if (provider === "elevenlabs") {
-    audioBuffer = await synthesizeElevenLabs(text, voiceIdentifier);
-  } else {
-    audioBuffer = await synthesizeOpenAI(text, voiceIdentifier);
+  try {
+    if (provider === "elevenlabs") {
+      audioBuffer = await synthesizeElevenLabs(text, voiceIdentifier);
+    } else {
+      audioBuffer = await synthesizeOpenAI(text, voiceIdentifier);
+    }
+  } catch (err) {
+    recordTtsEvent({
+      provider,
+      charsIn: text.length,
+      durationMs: Date.now() - t0,
+      audioDurationSec: null,
+      success: false,
+      error: (err as Error).message,
+    });
+    throw err;
   }
 
   const localPath = buildLocalOutputPath();
@@ -69,12 +113,13 @@ export async function runSynthesis(text: string, voice: Voice): Promise<{ filePa
   const storageKey = buildStorageKey();
   const url = await storageProvider.upload(localPath, storageKey);
 
-  logger.info("runSynthesis complete", {
-    provider,
-    storageKey,
-    url,
-    bytes: audioBuffer.length,
-  });
+  // Estimate audio duration: MP3 at 128kbps ≈ 16KB/sec
+  const audioDurationSec = audioBuffer.length / 16000;
+  const durationMs = Date.now() - t0;
+
+  logger.info("runSynthesis complete", { provider, storageKey, url, bytes: audioBuffer.length, durationMs });
+
+  recordTtsEvent({ provider, charsIn: text.length, durationMs, audioDurationSec, success: true });
 
   return { filePath: localPath, url };
 }

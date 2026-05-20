@@ -4,6 +4,45 @@ import crypto from "crypto";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 import { redis } from "../config/redis.js";
+import { AiEvent } from "../models/index.js";
+
+/* ─── Analytics helpers ───────────────────────────────────────────────────── */
+
+function estimateAiCost(provider: string, charsIn: number): { tokensEst: number; costUsd: number } {
+  const tokensEst = Math.round(charsIn / 4);
+  const ratesPerToken: Record<string, number> = {
+    openai: 0.00000015,     // $0.15/1M (gpt-4o-mini)
+    openrouter: 0.0000002,
+    gemini: 0.0000001,
+    anthropic: 0.00000025,
+  };
+  return { tokensEst, costUsd: tokensEst * (ratesPerToken[provider] ?? 0.0000002) };
+}
+
+function recordAiEvent(opts: {
+  charsIn: number;
+  durationMs: number;
+  success: boolean;
+  error?: string;
+  contentId?: number;
+}): void {
+  const { tokensEst, costUsd } = estimateAiCost(env.aiProvider, opts.charsIn);
+  AiEvent.create({
+    event_type: "ai_generation",
+    provider: env.aiProvider,
+    model: env.aiModel || undefined,
+    chars_in: opts.charsIn,
+    tokens_est: tokensEst,
+    cost_usd_est: costUsd,
+    duration_ms: opts.durationMs,
+    success: opts.success,
+    error: opts.error ?? null,
+    content_id: opts.contentId ?? null,
+    audio_duration_sec: null,
+  }).catch((err) => {
+    logger.debug("AiEvent.create failed (non-fatal)", { err: (err as Error).message });
+  });
+}
 
 export interface GenerateContentOptions {
   tema: string;
@@ -187,13 +226,21 @@ export class AiService {
       `  "tags": ["tag1", "tag2", "tag3", "tag4", "tag5"]\n` +
       `}\n\nNão inclua nada fora do JSON.`;
 
-    const raw = await chat(SYSTEM_BASE, userPrompt);
+    const t0 = Date.now();
+    let raw: string;
+    try {
+      raw = await chat(SYSTEM_BASE, userPrompt);
+    } catch (err) {
+      recordAiEvent({ charsIn: userPrompt.length, durationMs: Date.now() - t0, success: false, error: (err as Error).message });
+      throw err;
+    }
 
     let parsed: { titulo: string; texto: string; tags: string[] };
     try {
       const jsonMatch = raw.match(/\{[\s\S]*\}/);
       parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw) as typeof parsed;
     } catch (err) {
+      recordAiEvent({ charsIn: userPrompt.length, durationMs: Date.now() - t0, success: false, error: "JSON parse failed" });
       logger.error("AiService.generateContent: falha ao parsear JSON da IA", { raw, err });
       throw new Error("A IA retornou um formato inválido — tente novamente");
     }
@@ -205,6 +252,7 @@ export class AiService {
       duracao: duracaoSegundos,
     };
 
+    recordAiEvent({ charsIn: userPrompt.length, durationMs: Date.now() - t0, success: true });
     await setCached(key, result);
     return result;
   }
@@ -229,7 +277,15 @@ export class AiService {
       `- Encerramento (oração ou bênção)\n\n` +
       `Escreva o texto completo, pronto para ser narrado, sem marcadores de cena ou indicações técnicas.`;
 
-    const result = await chat(SYSTEM_BASE, userPrompt);
+    const t1 = Date.now();
+    let result: string;
+    try {
+      result = await chat(SYSTEM_BASE, userPrompt);
+    } catch (err) {
+      recordAiEvent({ charsIn: userPrompt.length, durationMs: Date.now() - t1, success: false, error: (err as Error).message });
+      throw err;
+    }
+    recordAiEvent({ charsIn: userPrompt.length, durationMs: Date.now() - t1, success: true });
     await setCached(key, result);
     return result;
   }
@@ -242,7 +298,16 @@ export class AiService {
       `O resumo deve capturar a essência da mensagem e ser adequado para uso como descrição em um app de rádio.\n\n` +
       `Conteúdo:\n${text}`;
 
-    return chat(SYSTEM_BASE, userPrompt);
+    const t2 = Date.now();
+    let result: string;
+    try {
+      result = await chat(SYSTEM_BASE, userPrompt);
+    } catch (err) {
+      recordAiEvent({ charsIn: text.length, durationMs: Date.now() - t2, success: false, error: (err as Error).message });
+      throw err;
+    }
+    recordAiEvent({ charsIn: text.length, durationMs: Date.now() - t2, success: true });
+    return result;
   }
 }
 
