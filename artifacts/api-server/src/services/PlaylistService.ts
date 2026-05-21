@@ -1,5 +1,6 @@
 import { Op } from "sequelize";
-import { Schedule, Content, Channel, Playlist, PlaylistItem } from "../models/index.js";
+import { Content, Channel, Playlist, PlaylistItem } from "../models/index.js";
+import { scheduleService } from "./ScheduleService.js";
 import { logger } from "../lib/logger.js";
 import { HttpError } from "../middlewares/errorHandler.js";
 import { realtimeService } from "./RealtimeService.js";
@@ -48,16 +49,8 @@ export class PlaylistService {
   }
 
   async buildPlaylist(playlistId: number, channelId: number, date: string): Promise<PlaylistItem[]> {
-    const dayStart = new Date(`${date}T00:00:00`);
-    const dayEnd = new Date(`${date}T23:59:59`);
-
-    const schedules = await Schedule.findAll({
-      where: {
-        channel_id: channelId,
-        horario_inicio: { [Op.between]: [dayStart, dayEnd] },
-      },
-      order: [["horario_inicio", "ASC"]],
-    });
+    // Use ScheduleService to get the merged, priority-resolved schedule for this date
+    const schedules = await scheduleService.findSchedulesForDate(date, channelId);
 
     await PlaylistItem.destroy({ where: { playlist_id: playlistId } });
 
@@ -96,12 +89,8 @@ export class PlaylistService {
     for (const slot of schedules) {
       const content = pickRandom(slot.tipo);
 
-      const slotDate = new Date(slot.horario_inicio);
-      const hora_execucao = [
-        String(slotDate.getHours()).padStart(2, "0"),
-        String(slotDate.getMinutes()).padStart(2, "0"),
-        String(slotDate.getSeconds()).padStart(2, "0"),
-      ].join(":");
+      // hora_execucao = "HH:MM:SS" — horario_inicio is now a TIME string
+      const hora_execucao = slot.horario_inicio.substring(0, 8); // ensure "HH:MM:SS"
 
       const item = await PlaylistItem.create({
         playlist_id: playlistId,

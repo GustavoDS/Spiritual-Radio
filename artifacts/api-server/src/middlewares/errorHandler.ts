@@ -9,11 +9,13 @@ export interface AppError extends Error {
 export class HttpError extends Error implements AppError {
   statusCode: number;
   isOperational = true;
+  details?: unknown;
 
-  constructor(message: string, statusCode = 500) {
+  constructor(message: string, statusCode = 500, details?: unknown) {
     super(message);
     this.name = "HttpError";
     this.statusCode = statusCode;
+    this.details = details;
   }
 }
 
@@ -36,9 +38,11 @@ export function errorHandler(
 
   if (res.headersSent) return;
 
+  const httpErr = err as HttpError;
   res.status(statusCode).json({
     success: false,
     message: isOperational ? err.message : "Erro interno do servidor",
+    ...(httpErr.details !== undefined && { details: httpErr.details }),
     ...(process.env["NODE_ENV"] === "development" && { stack: err.stack }),
   });
 }

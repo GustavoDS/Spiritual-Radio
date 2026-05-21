@@ -33,12 +33,43 @@ export const createCategorySchema = z.object({
 
 export const updateCategorySchema = createCategorySchema;
 
+const timeRegex = /^\d{2}:\d{2}(:\d{2})?$/;
+const timeField = (label: string) =>
+  z.string({ required_error: `${label} é obrigatório` })
+    .regex(timeRegex, `${label} deve estar no formato HH:MM ou HH:MM:SS`);
+
+const diasSemanaField = z
+  .array(z.number().int().min(0, "dia deve ser 0–6").max(6, "dia deve ser 0–6"))
+  .min(1, "dias_semana não pode ser vazio")
+  .refine((arr) => new Set(arr).size === arr.length, "dias_semana não pode ter duplicados")
+  .optional();
+
 export const createScheduleSchema = z.object({
   channel_id: z.number({ required_error: "channel_id é obrigatório", invalid_type_error: "channel_id deve ser um número" }).int().positive("channel_id deve ser positivo"),
-  horario_inicio: z.string({ required_error: "horario_inicio é obrigatório" }).min(1, "horario_inicio é obrigatório"),
-  horario_fim: z.string({ required_error: "horario_fim é obrigatório" }).min(1, "horario_fim é obrigatório"),
+  horario_inicio: timeField("horario_inicio"),
+  horario_fim: timeField("horario_fim"),
   tipo: z.string({ required_error: "tipo é obrigatório" }).min(1, "tipo é obrigatório").max(100),
+  dias_semana: diasSemanaField,
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data deve estar no formato YYYY-MM-DD").optional().nullable(),
+  prioridade: z.number().int().optional(),
+  ativo: z.boolean().optional(),
+}).refine((d) => d.horario_fim > d.horario_inicio, {
+  message: "horario_fim deve ser maior que horario_inicio",
+  path: ["horario_fim"],
 });
+
+export const updateScheduleSchema = z.object({
+  horario_inicio: timeField("horario_inicio").optional(),
+  horario_fim: timeField("horario_fim").optional(),
+  tipo: z.string().min(1).max(100).optional(),
+  dias_semana: diasSemanaField,
+  data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "data deve estar no formato YYYY-MM-DD").optional().nullable(),
+  prioridade: z.number().int().optional(),
+  ativo: z.boolean().optional(),
+}).refine(
+  (d) => !d.horario_inicio || !d.horario_fim || d.horario_fim > d.horario_inicio,
+  { message: "horario_fim deve ser maior que horario_inicio", path: ["horario_fim"] },
+);
 
 export const createPlaylistSchema = z.object({
   channel_id: z.number({ required_error: "channel_id é obrigatório", invalid_type_error: "channel_id deve ser um número" }).int().positive(),

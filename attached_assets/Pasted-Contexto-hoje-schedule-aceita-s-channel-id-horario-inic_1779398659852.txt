@@ -1,0 +1,24 @@
+Contexto: hoje /schedule aceita só channel_id, horario_inicio (HH:MM), horario_fim (HH:MM) e tipo. Os blocos tocam todos os dias no mesmo horário. Precisamos suportar grade semanal com exceções por data.
+
+Mudanças no modelo schedule:
+
+Adicionar coluna dias_semana int[] — array com 0=Dom … 6=Sáb. Default {0,1,2,3,4,5,6} (todo dia). Validar valores 0–6, sem duplicados, não vazio.
+Adicionar coluna data date NULL — quando preenchida, o bloco vale apenas naquela data (ignora dias_semana). Usado para programas especiais/feriados.
+Adicionar coluna prioridade int default 0 — blocos com data específica devem ter prioridade maior que os recorrentes ao montar a playlist do dia (resolve conflito).
+Adicionar coluna ativo boolean default true — permite desabilitar temporariamente sem excluir.
+Endpoints:
+
+POST /schedule aceitar dias_semana?: number[], data?: "YYYY-MM-DD", ativo?: boolean. Se vier data, dias_semana é ignorado.
+PUT /schedule/:id mesmos campos opcionais.
+GET /schedule retornar dias_semana, data, ativo, prioridade em cada item. Aceitar query ?date=YYYY-MM-DD que já filtra os blocos vigentes naquele dia (recorrentes do weekday + exceções da data, exceções vencem).
+POST /schedule/bulk — novo endpoint: aceita { items: ScheduleInput[] }, cria todos numa transação, retorna { created: Schedule[], errors: [{index, message}] }.
+POST /schedule/:id/duplicate — novo endpoint: aceita { overrides?: Partial<ScheduleInput> }, cria cópia aplicando os overrides (ex.: novo horário ou novos dias).
+Validação:
+
+Não permitir sobreposição de horário no mesmo canal + mesmo dia da semana (ou mesma data) entre blocos ativos. Retornar 409 com { conflict_with: id }.
+horario_fim > horario_inicio (sem cruzar meia-noite por enquanto).
+Gerador de playlist: ao montar a playlist de um dia, considerar exceções (data = aquele dia) primeiro, depois recorrentes cujo weekday bate. Em conflito, vence a maior prioridade, desempate pelo id mais novo.
+
+Migração: popular dias_semana = {0,1,2,3,4,5,6} para todos os registros existentes; data = NULL; ativo = true.
+
+Manter compatibilidade: front antigo que não envia dias_semana continua funcionando (vira diário).

@@ -64,7 +64,7 @@ export class RadioService {
       current,
       schedule,
       channel,
-      startedAt: schedule?.horario_inicio.toISOString(),
+      startedAt: schedule?.horario_inicio ?? null,
       source: "schedule",
     };
 
