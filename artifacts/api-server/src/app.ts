@@ -27,8 +27,14 @@ app.use(cors({ origin: env.corsOrigins, credentials: true }));
 app.use(requestIdMiddleware);
 app.use(globalLimiter);
 
-app.use("/uploads", express.static(env.uploadDir, {
-  maxAge: "1d",
+// Audio segments need CORS headers so HLS players (hls.js, iOS, Android) can fetch them cross-origin
+app.use("/uploads", (_req: Request, res: Response, next: NextFunction) => {
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+  res.setHeader("Timing-Allow-Origin", "*");
+  next();
+}, express.static(env.uploadDir, {
+  maxAge: "1h",
   index: false,
   dotfiles: "deny",
 }));
