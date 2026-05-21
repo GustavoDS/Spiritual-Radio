@@ -11,12 +11,12 @@ export interface TrackInfo {
   tipo: string;
   audioUrl: string | null;
   artworkUrl: string | null;
-  duracao: number;           // seconds
+  duracao: number;
   channelId: number;
   ordem: number;
-  horaExecucao: string | null;  // "HH:MM:SS" — schedule slot time
-  startedAt: string | null;     // ISO — when block started / will start
-  endsAt: string | null;        // ISO — when block ends / next block starts
+  horaExecucao: string | null;
+  startedAt: string | null;
+  endsAt: string | null;
 }
 
 export interface ChannelDJState {
@@ -34,7 +34,7 @@ export interface ChannelDJState {
   offlineReason: "no_schedule" | "between_blocks" | null;
   nextStartsAt: string | null;
   blockEndsAt: string | null;
-  pendingNext: TrackInfo | null;  // next scheduled block (for offline state)
+  pendingNext: TrackInfo | null;
 }
 
 export interface NowPlayingInfo {
@@ -54,12 +54,8 @@ export interface NowPlayingInfo {
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
 
-const QUEUE_RELOAD_THRESHOLD = 3;
-const QUEUE_MIN_SIZE = 10;
-const DEFAULT_TRACK_DURATION = 300;  // 5 min
+const DEFAULT_TRACK_DURATION = 300;
 const WATCHER_INTERVAL_MS = 5_000;
-const QUEUE_RELOAD_INTERVAL_MS = 5 * 60 * 1000;
-const FALLBACK_CONTENT_LIMIT = 20;
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -72,28 +68,12 @@ function currentTimeStr(): string {
   ].join(":");
 }
 
-/** Convert "HH:MM:SS" (local server time) to a Date for today. */
+/** "HH:MM:SS" (servidor local) → Date de hoje */
 function timeStrToDate(timeStr: string): Date {
   const [h = 0, m = 0, s = 0] = timeStr.split(":").map(Number);
   const d = new Date();
   d.setHours(h, m, s, 0);
   return d;
-}
-
-function toTrackInfo(c: Content, channelId: number, ordem: number): TrackInfo {
-  return {
-    contentId: c.id,
-    titulo: c.titulo,
-    tipo: c.tipo,
-    audioUrl: c.audio_url ?? null,
-    artworkUrl: c.imagem_url ?? null,
-    duracao: c.duracao ?? DEFAULT_TRACK_DURATION,
-    channelId,
-    ordem,
-    horaExecucao: null,
-    startedAt: null,
-    endsAt: null,
-  };
 }
 
 type PlaylistItemWithContent = PlaylistItem & { content: Content | null };
@@ -120,144 +100,14 @@ export class AutoDJService {
         peakListeners: 0,
         totalPlays: 0,
         fallbackMode: false,
-        scheduleMode: false,
-        offlineReason: null,
+        scheduleMode: true,
+        offlineReason: "no_schedule",
         nextStartsAt: null,
         blockEndsAt: null,
         pendingNext: null,
       });
     }
     return this.states.get(channelId)!;
-  }
-
-  /* ── Queue building ─────────────────────────────────────────────────── */
-
-  async buildQueue(channelId: number): Promise<{ tracks: TrackInfo[]; fallback: boolean; scheduleMode: boolean }> {
-    const today = new Date().toISOString().split("T")[0]!;
-    const playlist = await Playlist.findOne({ where: { channel_id: channelId, data: today } });
-
-    if (playlist) {
-      const items = (await PlaylistItem.findAll({
-        where: { playlist_id: playlist.id, content_id: { [Op.ne]: null } },
-        include: [{ model: Content, as: "content" }],
-        order: [["hora_execucao", "ASC"], ["ordem", "ASC"]],
-      })) as PlaylistItemWithContent[];
-
-      // Schedule mode: playlist has time slots
-      const hasSchedule = items.some((i) => i.hora_execucao !== null);
-
-      if (hasSchedule) {
-        const tracks = items
-          .map((item) => {
-            const c = item.content;
-            if (!c) return null;
-            return {
-              contentId: c.id,
-              titulo: c.titulo,
-              tipo: c.tipo,
-              audioUrl: c.audio_url ?? null,
-              artworkUrl: c.imagem_url ?? null,
-              duracao: c.duracao ?? DEFAULT_TRACK_DURATION,
-              channelId,
-              ordem: item.ordem,
-              horaExecucao: item.hora_execucao,
-              startedAt: item.hora_execucao ? timeStrToDate(item.hora_execucao).toISOString() : null,
-              endsAt: null as string | null,
-            };
-          })
-          .filter((t): t is TrackInfo => t !== null);
-        return { tracks, fallback: false, scheduleMode: true };
-      }
-
-      // Continuous mode: playlist without time slots
-      const audioTracks = items
-        .map((item) => {
-          const c = item.content;
-          if (!c || !c.ativo || !c.audio_url) return null;
-          return {
-            contentId: c.id,
-            titulo: c.titulo,
-            tipo: c.tipo,
-            audioUrl: c.audio_url as string | null,
-            artworkUrl: c.imagem_url ?? null,
-            duracao: c.duracao ?? DEFAULT_TRACK_DURATION,
-            channelId,
-            ordem: item.ordem,
-            horaExecucao: null as string | null,
-            startedAt: null as string | null,
-            endsAt: null as string | null,
-          };
-        })
-        .filter((t): t is TrackInfo => t !== null);
-
-      if (audioTracks.length > 0) {
-        return { tracks: audioTracks, fallback: false, scheduleMode: false };
-      }
-    }
-
-    // Fallback: latest contents with audio for this channel
-    logger.info("AutoDJService: no scheduled playlist — using fallback", { channelId });
-    const fallback = await this.buildFallbackTracks(channelId);
-    return { tracks: fallback, fallback: true, scheduleMode: false };
-  }
-
-  private async buildFallbackTracks(channelId: number): Promise<TrackInfo[]> {
-    const contents = await Content.findAll({
-      where: { channel_id: channelId, ativo: true, audio_url: { [Op.ne]: null } },
-      order: [["createdAt", "DESC"]],
-      limit: FALLBACK_CONTENT_LIMIT,
-    });
-    if (contents.length > 0) {
-      return [...contents].sort(() => Math.random() - 0.5).map((c, i) => toTrackInfo(c, channelId, i));
-    }
-    // Last resort: any active content
-    const any = await Content.findAll({
-      where: { ativo: true, audio_url: { [Op.ne]: null } },
-      order: [["createdAt", "DESC"]],
-      limit: FALLBACK_CONTENT_LIMIT,
-    });
-    return any.map((c, i) => toTrackInfo(c, channelId, i));
-  }
-
-  /* ── Init ───────────────────────────────────────────────────────────── */
-
-  async initChannel(channelId: number): Promise<void> {
-    const state = this.getOrCreateState(channelId);
-    const { tracks, fallback, scheduleMode } = await this.buildQueue(channelId);
-
-    state.scheduleMode = scheduleMode;
-    state.fallbackMode = fallback;
-    state.lastQueueLoad = new Date();
-
-    if (scheduleMode) {
-      state.queue = tracks;
-      state.currentIndex = 0;
-      // tickScheduleMode handles actual playback state
-      logger.info("AutoDJService: channel in schedule mode", { channelId, slots: tracks.length });
-    } else if (tracks.length > 0) {
-      state.queue = tracks;
-      state.currentIndex = 0;
-      state.isPlaying = true;
-      state.playingSince = new Date();
-      state.offlineReason = null;
-      state.pendingNext = null;
-      state.totalPlays++;
-
-      // Set startedAt / endsAt on the first track so getNowPlaying returns them immediately
-      const first = tracks[0]!;
-      first.startedAt = state.playingSince.toISOString();
-      first.endsAt = new Date(
-        state.playingSince.getTime() + (first.duracao > 0 ? first.duracao : DEFAULT_TRACK_DURATION) * 1000,
-      ).toISOString();
-      state.blockEndsAt = first.endsAt;
-
-      logger.info("AutoDJService: channel in continuous mode", { channelId, tracks: tracks.length, first: first.titulo });
-    } else {
-      state.isPlaying = false;
-      state.playingSince = null;
-      state.offlineReason = "no_schedule";
-      logger.warn("AutoDJService: channel has no playable content", { channelId });
-    }
   }
 
   /* ── Offline helper ─────────────────────────────────────────────────── */
@@ -276,6 +126,8 @@ export class AutoDJService {
     state.offlineReason = reason;
     state.nextStartsAt = nextStartsAt;
     state.pendingNext = pendingNext;
+    state.queue = pendingNext ? [pendingNext] : [];
+    state.currentIndex = 0;
 
     if (wasPlaying) {
       realtimeService.broadcastPublic("radio_offline", {
@@ -288,38 +140,35 @@ export class AutoDJService {
     }
   }
 
-  /* ── Schedule-aware tick ────────────────────────────────────────────── */
+  /* ── Schedule tick (source of truth) ────────────────────────────────── */
 
   private async tickScheduleMode(channelId: number, state: ChannelDJState): Promise<void> {
     const today = new Date().toISOString().split("T")[0]!;
     const nowStr = currentTimeStr();
+    const now = new Date();
 
+    // 1. Check playlist exists for today
     const playlist = await Playlist.findOne({ where: { channel_id: channelId, data: today } });
     if (!playlist) {
       this.setOffline(channelId, state, "no_schedule", null, null);
       return;
     }
 
-    const [currentItem, nextItem] = (await Promise.all([
-      // Most recent block that has started
-      PlaylistItem.findOne({
-        where: { playlist_id: playlist.id, hora_execucao: { [Op.lte]: nowStr } },
-        include: [{ model: Content, as: "content" }],
-        order: [["hora_execucao", "DESC"]],
-      }),
-      // Earliest upcoming block with content
-      PlaylistItem.findOne({
-        where: { playlist_id: playlist.id, hora_execucao: { [Op.gt]: nowStr }, content_id: { [Op.ne]: null } },
-        include: [{ model: Content, as: "content" }],
-        order: [["hora_execucao", "ASC"]],
-      }),
-    ])) as [PlaylistItemWithContent | null, PlaylistItemWithContent | null];
+    // 2. Next upcoming block (hora_execucao > now, has audio)
+    const nextItem = (await PlaylistItem.findOne({
+      where: {
+        playlist_id: playlist.id,
+        hora_execucao: { [Op.gt]: nowStr },
+        content_id: { [Op.ne]: null },
+      },
+      include: [{ model: Content, as: "content" }],
+      order: [["hora_execucao", "ASC"]],
+    })) as PlaylistItemWithContent | null;
 
     const nextStartsAt = nextItem?.hora_execucao
       ? timeStrToDate(nextItem.hora_execucao).toISOString()
       : null;
 
-    // Build pendingNext (preview of next block, available even offline)
     let pendingNext: TrackInfo | null = null;
     if (nextItem?.content) {
       const nc = nextItem.content;
@@ -338,35 +187,69 @@ export class AutoDJService {
       };
     }
 
-    // No current block, or current block has no audio
-    if (!currentItem || !currentItem.content_id || !currentItem.content?.audio_url) {
-      this.setOffline(channelId, state, "between_blocks", nextStartsAt, pendingNext);
+    // 3. Most recently started block (hora_execucao <= now)
+    const candidate = (await PlaylistItem.findOne({
+      where: {
+        playlist_id: playlist.id,
+        hora_execucao: { [Op.lte]: nowStr },
+        content_id: { [Op.ne]: null },
+      },
+      include: [{ model: Content, as: "content" }],
+      order: [["hora_execucao", "DESC"]],
+    })) as PlaylistItemWithContent | null;
+
+    // 4. Verify block hasn't expired
+    // A block is active while: now >= hora_execucao AND now < nextBlock.hora_execucao (or now < hora_execucao + duracao)
+    let currentItem: PlaylistItemWithContent | null = null;
+    if (candidate?.hora_execucao && candidate.content) {
+      const blockStart = timeStrToDate(candidate.hora_execucao);
+      const duracao = candidate.content.duracao ?? DEFAULT_TRACK_DURATION;
+      // End = next block start if exists, else start + duracao
+      const blockEndDate = nextItem?.hora_execucao
+        ? timeStrToDate(nextItem.hora_execucao)
+        : new Date(blockStart.getTime() + duracao * 1000);
+
+      if (now < blockEndDate) {
+        currentItem = candidate;
+      }
+      // else: block ended, between blocks
+    }
+
+    // 5. No active block → offline
+    if (!currentItem || !currentItem.content?.audio_url) {
+      const reason = candidate ? "between_blocks" : "no_schedule";
+      this.setOffline(channelId, state, reason, nextStartsAt, pendingNext);
       return;
     }
 
     const content = currentItem.content!;
 
-    // Already playing this exact block? Just refresh endsAt and next
+    // 6. Compute timing for active block
+    const playingSince = timeStrToDate(currentItem.hora_execucao!);
+    const blockEndDate = nextItem?.hora_execucao
+      ? timeStrToDate(nextItem.hora_execucao)
+      : new Date(playingSince.getTime() + (content.duracao ?? DEFAULT_TRACK_DURATION) * 1000);
+    const endsAt = blockEndDate.toISOString();
+
+    // 7. Already playing this exact block? Just refresh endsAt and next
     const active = state.queue[state.currentIndex];
-    if (state.isPlaying && active?.horaExecucao === currentItem.hora_execucao && active.contentId === content.id) {
-      const newEndsAt = nextItem?.hora_execucao
-        ? timeStrToDate(nextItem.hora_execucao).toISOString()
-        : state.blockEndsAt;
-      if (newEndsAt && active.endsAt !== newEndsAt) {
-        active.endsAt = newEndsAt;
-        state.blockEndsAt = newEndsAt;
+    if (
+      state.isPlaying &&
+      active?.horaExecucao === currentItem.hora_execucao &&
+      active.contentId === content.id
+    ) {
+      if (active.endsAt !== endsAt) {
+        active.endsAt = endsAt;
+        state.blockEndsAt = endsAt;
       }
       state.nextStartsAt = nextStartsAt;
       state.pendingNext = pendingNext;
+      if (pendingNext && state.queue.length < 2) state.queue = [active, pendingNext];
       return;
     }
 
-    // New block started — transition
+    // 8. New block — transition
     const wasPlaying = state.isPlaying;
-    const playingSince = timeStrToDate(currentItem.hora_execucao!);
-    const endsAt = nextItem?.hora_execucao
-      ? timeStrToDate(nextItem.hora_execucao).toISOString()
-      : new Date(playingSince.getTime() + (content.duracao ?? DEFAULT_TRACK_DURATION) * 1000).toISOString();
 
     const track: TrackInfo = {
       contentId: content.id,
@@ -390,10 +273,11 @@ export class AutoDJService {
     state.blockEndsAt = endsAt;
     state.nextStartsAt = nextStartsAt;
     state.pendingNext = pendingNext;
+    state.scheduleMode = true;
+    state.fallbackMode = false;
     state.totalPlays++;
     state.lastQueueLoad = new Date();
 
-    // Record RadioPlay (non-blocking)
     RadioPlay.create({
       channel_id: channelId,
       content_id: content.id,
@@ -437,94 +321,15 @@ export class AutoDJService {
     });
   }
 
-  /* ── Continuous mode tick ───────────────────────────────────────────── */
+  /* ── Init ───────────────────────────────────────────────────────────── */
 
-  private async tickContinuousMode(channelId: number, state: ChannelDJState): Promise<void> {
-    if (state.queue.length === 0) {
-      await this.initChannel(channelId);
-      return;
-    }
-
-    if (
-      state.lastQueueLoad &&
-      Date.now() - state.lastQueueLoad.getTime() > QUEUE_RELOAD_INTERVAL_MS &&
-      state.queue.length <= QUEUE_MIN_SIZE
-    ) {
-      await this.initChannel(channelId);
-      return;
-    }
-
-    if (!state.isPlaying || !state.playingSince) return;
-
-    const current = state.queue[state.currentIndex];
-    if (!current) { await this.initChannel(channelId); return; }
-
-    const elapsed = (Date.now() - state.playingSince.getTime()) / 1000;
-    const effectiveDuration = current.duracao > 0 ? current.duracao : DEFAULT_TRACK_DURATION;
-
-    if (elapsed >= effectiveDuration) {
-      await this.advanceContinuous(channelId, state);
-    }
-  }
-
-  private async advanceContinuous(channelId: number, state: ChannelDJState): Promise<void> {
-    state.currentIndex = (state.currentIndex + 1) % Math.max(state.queue.length, 1);
-
-    if (state.queue.length - state.currentIndex <= QUEUE_RELOAD_THRESHOLD) {
-      const { tracks } = await this.buildQueue(channelId);
-      if (tracks.length > 0) {
-        const remaining = state.queue.slice(state.currentIndex);
-        const remainingIds = new Set(remaining.map((t) => t.contentId));
-        state.queue = [...remaining, ...tracks.filter((t) => !remainingIds.has(t.contentId))];
-        state.currentIndex = 0;
-        state.lastQueueLoad = new Date();
-      }
-    }
-
-    const current = state.queue[state.currentIndex] ?? null;
-    const next = state.queue[state.currentIndex + 1] ?? null;
-
-    if (current) {
-      state.playingSince = new Date();
-      state.isPlaying = true;
-      state.offlineReason = null;
-      state.totalPlays++;
-
-      const endsAt = new Date(
-        state.playingSince.getTime() + (current.duracao > 0 ? current.duracao : DEFAULT_TRACK_DURATION) * 1000,
-      ).toISOString();
-      current.startedAt = state.playingSince.toISOString();
-      current.endsAt = endsAt;
-
-      RadioPlay.create({
-        channel_id: channelId,
-        content_id: current.contentId,
-        titulo: current.titulo,
-        tipo: current.tipo,
-        played_at: state.playingSince,
-      }).catch(() => {});
-
-      const ts = new Date().toISOString();
-      realtimeService.broadcastPublic("radio_online", { channelId, ts });
-      realtimeService.broadcastPublic("current_track_changed", {
-        channelId,
-        current: { id: current.contentId, titulo: current.titulo, audioUrl: current.audioUrl, artworkUrl: current.artworkUrl, startedAt: current.startedAt, endsAt: current.endsAt },
-        next: next ? { id: next.contentId, titulo: next.titulo } : null,
-        ts,
-        source: "autodj",
-      });
-    } else {
-      state.isPlaying = false;
-      state.playingSince = null;
-      state.offlineReason = "no_schedule";
-      realtimeService.broadcastPublic("radio_offline", {
-        channelId,
-        offlineReason: "no_schedule",
-        nextStartsAt: null,
-        ts: new Date().toISOString(),
-      });
-      logger.warn("AutoDJService: channel out of content", { channelId });
-    }
+  async initChannel(channelId: number): Promise<void> {
+    const state = this.getOrCreateState(channelId);
+    state.scheduleMode = true;
+    state.fallbackMode = false;
+    state.lastQueueLoad = new Date();
+    // Run first tick immediately to set accurate state
+    await this.tickScheduleMode(channelId, state);
   }
 
   /* ── Watcher ────────────────────────────────────────────────────────── */
@@ -552,22 +357,10 @@ export class AutoDJService {
     catch { return; }
 
     for (const ch of channels) {
-      const state = this.states.get(ch.id);
-
-      if (!state) {
-        await this.initChannel(ch.id).catch(() => {});
-        continue;
-      }
-
-      if (state.scheduleMode) {
-        await this.tickScheduleMode(ch.id, state).catch((err) =>
-          logger.debug("AutoDJService: tickScheduleMode failed", { channelId: ch.id, err: (err as Error).message }),
-        );
-      } else {
-        await this.tickContinuousMode(ch.id, state).catch((err) =>
-          logger.debug("AutoDJService: tickContinuousMode failed", { channelId: ch.id, err: (err as Error).message }),
-        );
-      }
+      const state = this.getOrCreateState(ch.id);
+      await this.tickScheduleMode(ch.id, state).catch((err) =>
+        logger.debug("AutoDJService: tick failed", { channelId: ch.id, err: (err as Error).message }),
+      );
     }
   }
 
@@ -582,7 +375,7 @@ export class AutoDJService {
         next: state?.pendingNext ?? null,
         upNext: [],
         isPlaying: false,
-        scheduleMode: state?.scheduleMode ?? false,
+        scheduleMode: true,
         startedAt: null,
         endsAt: null,
         progressSec: 0,
@@ -609,7 +402,7 @@ export class AutoDJService {
       next,
       upNext,
       isPlaying: true,
-      scheduleMode: state.scheduleMode,
+      scheduleMode: true,
       startedAt: state.playingSince?.toISOString() ?? null,
       endsAt,
       progressSec,
@@ -620,64 +413,47 @@ export class AutoDJService {
     };
   }
 
-  getQueue(channelId: number, count = 10): TrackInfo[] {
+  getQueue(channelId: number, limit = 10): TrackInfo[] {
     const state = this.states.get(channelId);
     if (!state) return [];
-    return state.queue.slice(state.currentIndex, state.currentIndex + count).filter((t) => !!t.audioUrl);
+    return state.queue.slice(state.currentIndex, state.currentIndex + limit);
   }
 
   getAllChannelStates(): ChannelDJState[] {
     return Array.from(this.states.values());
   }
 
-  getChannelState(channelId: number): ChannelDJState | null {
-    return this.states.get(channelId) ?? null;
+  getChannelState(channelId: number): ChannelDJState | undefined {
+    return this.states.get(channelId);
   }
 
-  /* ── Listener tracking ──────────────────────────────────────────────── */
-
-  incrementListeners(channelId: number): void {
+  addListener(channelId: number): void {
     const state = this.getOrCreateState(channelId);
-    state.listenerCount = Math.max(0, state.listenerCount + 1);
-    if (state.listenerCount > state.peakListeners) state.peakListeners = state.listenerCount;
+    state.listenerCount++;
+    if (state.listenerCount > state.peakListeners) {
+      state.peakListeners = state.listenerCount;
+    }
   }
 
-  decrementListeners(channelId: number): void {
+  removeListener(channelId: number): void {
     const state = this.states.get(channelId);
-    if (state) state.listenerCount = Math.max(0, state.listenerCount - 1);
+    if (state && state.listenerCount > 0) state.listenerCount--;
   }
-
-  /* ── Control ────────────────────────────────────────────────────────── */
 
   async restart(channelId: number): Promise<void> {
     const state = this.states.get(channelId);
     if (state) {
-      Object.assign(state, {
-        queue: [], currentIndex: 0, playingSince: null, isPlaying: false,
-        scheduleMode: false, offlineReason: null, blockEndsAt: null, pendingNext: null,
-      });
+      state.isPlaying = false;
+      state.queue = [];
+      state.currentIndex = 0;
+      state.pendingNext = null;
+      state.blockEndsAt = null;
     }
     await this.initChannel(channelId);
   }
 
   async reload(channelId: number): Promise<void> {
-    const state = this.getOrCreateState(channelId);
-    const { tracks, fallback, scheduleMode } = await this.buildQueue(channelId);
-    state.scheduleMode = scheduleMode;
-    state.fallbackMode = fallback;
-    state.lastQueueLoad = new Date();
-
-    if (scheduleMode) {
-      state.queue = tracks;
-      state.currentIndex = 0;
-    } else if (tracks.length > 0) {
-      const current = state.queue[state.currentIndex];
-      state.queue = current
-        ? [current, ...tracks.filter((t) => t.contentId !== current.contentId)]
-        : tracks;
-      state.currentIndex = 0;
-    }
-    logger.info("AutoDJService: queue reloaded", { channelId, scheduleMode, tracks: tracks.length });
+    await this.initChannel(channelId);
   }
 }
 

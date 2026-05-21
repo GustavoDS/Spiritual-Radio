@@ -1,0 +1,36 @@
+Hoje, com PlaylistItem vazio / sem hora_execucao vigente, a resposta é:
+
+{ "isPlaying": true, "scheduleMode": false, "current": { "titulo": "Louvor de adoração", ... }, "offlineReason": null }
+E GET /api/public/radio/schedule retorna {"data": []}.
+
+Ou seja: o AutoDJ está no fallback contínuo (gira a playlist por duração) e ainda assim declara isPlaying: true. Isso faz qualquer cliente tocar áudio fora de programação.
+
+Correção esperada (modo schedule-aware no AutoDJ)
+Fonte de verdade = PlaylistItem.hora_execucao (gerado pelo POST /api/admin/generate-playlists a partir dos slots Schedule.hora_inicio → hora_fim).
+
+Em now-playing.json:
+
+Buscar PlaylistItem cujo hora_execucao <= now < hora_execucao + duracao no canal.
+Se existir → isPlaying: true, current: {...}, next: {próximo PlaylistItem futuro}, offlineReason: null, nextStartsAt: null.
+Se NÃO existir bloco vigente → responder:
+{
+  "isPlaying": false,
+  "scheduleMode": true,
+  "current": null,
+  "next": { "titulo": "...", "startedAt": "<próximo hora_execucao ISO>" },
+  "offlineReason": "between_blocks",   // ou "no_schedule" se PlaylistItem estiver vazio no dia
+  "nextStartsAt": "<próximo hora_execucao ISO>",
+  "listeners": <n>
+}
+Remover o fallback que avança por ordem + duração ignorando hora_execucao. Sem grade → offline, ponto.
+Em GET /api/public/stream/:channelId/live.m3u8:
+
+Quando isPlaying === false, responder 204 No Content (sem #EXTM3U, sem segmentos). Hoje ele está devolvendo #EXTM3U com 8 faixas mesmo sem programação — é isso que mantém o áudio rodando.
+Quando isPlaying === true, montar o manifesto só com o PlaylistItem vigente + próximos do mesmo bloco, com #EXT-X-PROGRAM-DATE-TIME igual ao hora_execucao do item atual.
+Emitir SSE no realtime:
+
+radio_offline com { offlineReason, nextStartsAt } quando a transição on→off acontecer.
+radio_online quando off→on (chega o hora_execucao de um novo bloco).
+CORS no R2: confirmar que a policy abaixo está aplicada no bucket (Cloudflare Dashboard → R2 → bucket → Settings → CORS):
+
+[{ "AllowedOrigins": ["*"], "AllowedMethods": ["GET", "HEAD"], "MaxAgeSeconds": 3600 }]

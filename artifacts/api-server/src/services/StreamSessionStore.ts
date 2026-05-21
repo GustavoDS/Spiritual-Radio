@@ -53,7 +53,7 @@ export class StreamSessionStore {
     for (const [token, session] of this.sessions) {
       if (session.lastPingAt.getTime() < cutoff) {
         this.sessions.delete(token);
-        autoDjService.decrementListeners(session.channelId);
+        autoDjService.removeListener(session.channelId);
         removed++;
       }
     }
@@ -77,7 +77,7 @@ export class StreamSessionStore {
       totalListenedMs: 0,
     };
     this.sessions.set(token, session);
-    autoDjService.incrementListeners(channelId);
+    autoDjService.addListener(channelId);
     logger.debug("StreamSessionStore: session created", { token: token.slice(0, 8), channelId, ip });
     return session;
   }
@@ -95,7 +95,7 @@ export class StreamSessionStore {
     const session = this.sessions.get(token);
     if (session) {
       this.sessions.delete(token);
-      autoDjService.decrementListeners(session.channelId);
+      autoDjService.removeListener(session.channelId);
     }
   }
 
