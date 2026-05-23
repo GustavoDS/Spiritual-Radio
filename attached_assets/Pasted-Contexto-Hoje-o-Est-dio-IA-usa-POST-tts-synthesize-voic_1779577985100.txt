@@ -1,0 +1,89 @@
+Contexto
+Hoje o Estúdio IA usa POST /tts/synthesize (voiceId + text → mp3 da voz seca). Precisamos de um endpoint irmão que entregue um único MP3 já mixado com trilha de fundo + narração, pronto pra entrar na grade da rádio como qualquer outro conteúdo. Sem mudar nada do TTS atual — só reaproveitar.
+
+Novo endpoint
+POST /tts/mix
+
+Request (JSON)
+{
+  "voiceId": 3,
+  "text": "Texto da reflexão/oração/vinheta...",
+  "bedUrl": "https://cdn.nexoprime.tec.br/acervo/trilha-suave-01.mp3",
+  "duckDb": -12,
+  "fadeInMs": 800,
+  "fadeOutMs": 1500,
+  "tailMs": 2000,
+  "bedGainDb": -6,
+  "voiceGainDb": 0,
+  "normalizeLufs": -16
+}
+Campo	Obrigatório	Default	Descrição
+voiceId	✅	—	Mesma voz cadastrada em /voices (igual ao /tts/synthesize)
+text	✅	—	Texto a ser narrado (máx 5000 chars)
+bedUrl	✅	—	URL pública do mp3 da trilha (vem do acervo)
+duckDb	❌	-12	Quantos dB a trilha abaixa enquanto a voz toca
+fadeInMs	❌	800	Fade-in da trilha no início
+fadeOutMs	❌	1500	Fade-out da trilha no fim
+tailMs	❌	2000	Quanto tempo a trilha continua depois que a voz termina
+bedGainDb	❌	-6	Volume base da trilha (antes do ducking)
+voiceGainDb	❌	0	Ganho da voz
+normalizeLufs	❌	-16	Loudness alvo (padrão broadcast)
+Response (200)
+{
+  "url": "https://cdn.nexoprime.tec.br/mix/8a7f...e2.mp3",
+  "duration_sec": 47,
+  "cached": false,
+  "voiceUrl": "https://cdn.nexoprime.tec.br/tts/abc.mp3",
+  "bedUrl": "https://cdn.nexoprime.tec.br/acervo/trilha-suave-01.mp3"
+}
+Erros
+400 — text vazio, voiceId inexistente, bedUrl inválida/inacessível
+413 — texto > 5000 chars
+502 — falha ao baixar bedUrl
+500 — falha no ffmpeg
+Pipeline interno sugerido
+1. Validar payload (zod/joi)
+2. Gerar hash da combinação (voiceId + sha1(text) + bedUrl + params)
+   → se já existir no storage, retorna URL cacheada (cached: true)
+3. Chamar TTS interno (mesma lib do /tts/synthesize) → voice.mp3 em /tmp
+4. Baixar bedUrl → bed.mp3 em /tmp (timeout 15s, máx 20MB)
+5. ffmpeg mixa (filtro abaixo) → mixed.mp3
+6. Upload p/ storage (S3/R2/local) com Cache-Control longo
+7. Retornar URL + duração (ffprobe)
+8. Limpar /tmp
+Comando ffmpeg de referência
+ffmpeg -y \
+  -i bed.mp3 \
+  -i voice.mp3 \
+  -filter_complex "
+    [0:a]volume=${bedGainDb}dB,afade=t=in:st=0:d=${fadeInMs/1000},aloop=loop=-1:size=2e9[bed];
+    [1:a]volume=${voiceGainDb}dB,adelay=${fadeInMs}|${fadeInMs}[voice];
+    [bed][voice]sidechaincompress=threshold=0.05:ratio=8:attack=20:release=400:makeup=0[ducked];
+    [ducked][voice]amix=inputs=2:duration=first:dropout_transition=0[mixed];
+    [mixed]afade=t=out:st=OUT_START:d=${fadeOutMs/1000},loudnorm=I=${normalizeLufs}:TP=-1.5:LRA=11
+  " \
+  -ac 2 -ar 44100 -b:a 192k \
+  mixed.mp3
+Onde OUT_START = (duração_voz + fadeInMs/1000 + tailMs/1000) - fadeOutMs/1000.
+
+O sidechaincompress faz o ducking automático — toda vez que a voz tem sinal, a trilha abaixa pelo ratio definido. É o que dá o efeito "rádio profissional".
+
+Cache
+Chave: sha256(voiceId | text | bedUrl | duckDb | fadeInMs | fadeOutMs | tailMs | bedGainDb | voiceGainDb | normalizeLufs). Se hit, devolve a URL existente sem reprocessar.
+
+Limites recomendados
+Texto: 5000 chars
+Trilha: máx 10 minutos / 20MB
+Timeout total: 60s
+Concorrência: fila (igual TTS) — retornar 202 { jobId } se demorar > 15s e endpoint GET /tts/mix/:jobId pra polling (opcional na v1).
+O que não muda
+/tts/synthesize continua igual.
+/voices, /contents, /ai/* — nada muda.
+Nenhuma chave de IA nova. Mesmo provider TTS (OpenAI/ElevenLabs) já cadastrado.
+Como o frontend vai chamar
+// src/lib/api/services/tts.ts
+TTSService.mix({
+  voiceId, text, bedUrl,
+  duckDb: -12, fadeInMs: 800, fadeOutMs: 1500, tailMs: 2000
+}) → { url, duration_sec }
+E depois cria o conteúdo na biblioteca com audio_url = url (igual hoje).
