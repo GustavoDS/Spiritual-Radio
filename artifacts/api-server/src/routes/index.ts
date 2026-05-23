@@ -18,6 +18,8 @@ import realtimeRouter from "../modules/realtime/realtime.routes.js";
 import analyticsRouter from "../modules/analytics/analytics.routes.js";
 import automationRouter from "../modules/automation/automation.routes.js";
 import { streamAdminRouter } from "../modules/stream/stream.routes.js";
+import programasRouter from "../modules/programas/programas.routes.js";
+import gradeProgramasRouter from "../modules/grade-programas/grade-programas.routes.js";
 
 const router: IRouter = Router();
 
@@ -42,5 +44,7 @@ router.use("/admin/analytics", analyticsRouter);
 router.use("/admin/automation", automationRouter);
 router.use("/admin/stream", streamAdminRouter);
 router.use("/realtime", realtimeRouter);
+router.use("/programas", programasRouter);
+router.use("/grade-programas", gradeProgramasRouter);
 
 export default router;

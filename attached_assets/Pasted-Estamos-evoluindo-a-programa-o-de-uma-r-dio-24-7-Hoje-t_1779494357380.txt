@@ -1,0 +1,110 @@
+Estamos evoluindo a programação de uma rádio 24/7. Hoje temos schedule com slots fixos por tipo (música/oração/vinheta) com duração estimada. Vamos para um modelo de Programas reutilizáveis + Grade semanal, com playlist resolvida por duração real dos áudios.
+
+1. Pré-requisito: contents.duration_sec
+Garantir que TODO conteúdo da biblioteca tenha duration_sec (integer, segundos) preenchido e confiável.
+
+No upload de áudio, extrair a duração real do arquivo (ex.: ffprobe, music-metadata, mutagen).
+Backfill: rodar script único nos conteúdos antigos para preencher.
+Bloquear publicação (status='Pronto') se duration_sec for nulo ou ≤ 0.
+2. Novas tabelas
+programas
+- id (pk)
+- nome (string, único por canal)
+- descricao (text, opcional)
+- duracao_min (int, 5–240)
+- bloco (enum: madrugada, amanhecer, manha, almoco, tarde, prime, noite, devocional, sleep, custom)
+- receita (jsonb)  -- ex: [{ "tipo": "musica", "pct": 60 }, { "tipo": "mensagem", "pct": 20 }, { "tipo": "oracao", "pct": 15 }, { "tipo": "vinheta", "pct": 5 }]
+- regras (jsonb)   -- ex: { "abre_com": "vinheta", "fecha_com": "oracao", "anti_repeticao_dias": 3, "max_musicas_seguidas": 2 }
+- channel_id (fk, opcional — null = compartilhado)
+- ativo (bool, default true)
+- created_at, updated_at
+Validações:
+
+soma das pct da receita = 100
+tipos da receita devem existir como categorias válidas
+duracao_min múltiplo de 5
+grade_programas
+- id (pk)
+- programa_id (fk → programas)
+- channel_id (fk → channels)
+- horario_inicio (time, HH:MM)
+- dias_semana (int[] 0–6) OU data (date)  -- um dos dois obrigatório
+- prioridade (int, default 0)
+- ativo (bool, default true)
+- created_at, updated_at
+Validações:
+
+não permitir sobreposição de programas no mesmo canal/dia/horário
+horario_inicio + programa.duracao_min não pode ultrapassar 24h (ou tratar virada de dia)
+3. Endpoints REST
+Programas
+GET    /programas?channel_id=&bloco=&ativo=     → lista paginada
+GET    /programas/:id
+POST   /programas                               → cria
+PUT    /programas/:id                           → atualiza
+DELETE /programas/:id                           → soft delete (ativo=false)
+POST   /programas/:id/duplicate                 → clona
+Grade
+GET    /grade-programas?channel_id=&dia=&data=
+POST   /grade-programas
+PUT    /grade-programas/:id
+DELETE /grade-programas/:id
+POST   /grade-programas/bulk                    → cria vários
+Resolução (o coração novo)
+POST /programas/:id/resolve
+Body: { "channel_id": 1, "date": "2026-05-23", "seed": "opcional" }
+Resposta:
+{
+  "programa": { "id", "nome", "duracao_min" },
+  "starts_at": "2026-05-23T08:00:00Z",
+  "duracao_real_sec": 3592,
+  "items": [
+    {
+      "ordem": 1,
+      "content_id": "uuid",
+      "title": "...",
+      "tipo": "musica",
+      "duration_sec": 218,
+      "starts_at": "2026-05-23T08:00:00Z"
+    },
+    ...
+  ],
+  "ajustes": { "vazio_sec": 8, "trocas": 2 }
+}
+POST /grade-programas/resolve-day
+Body: { "channel_id": 1, "date": "2026-05-23" }
+Resposta: { "items": [ ...todos os itens do dia em ordem cronológica ] }
+4. Algoritmo de resolução (bin packing)
+Input: programa (duração, receita, regras), data, canal, biblioteca filtrada por canal/status=Pronto
+
+Passo a passo:
+
+Calcular alvo em segundos por tipo: duracao_min * 60 * pct/100
+Filtrar conteúdos da biblioteca por cada tipo necessário
+Aplicar anti-repetição: excluir IDs tocados nos últimos N dias (parâmetro da regra, default 3) — consultar tabela play_history ou similar
+Para cada tipo, embaralhar com seed determinística (date + channel_id + programa_id)
+Encaixar gulosamente: ir somando durações até atingir o alvo do tipo ± 30s
+Intercalar tipos respeitando max_musicas_seguidas e regras abre_com/fecha_com
+Se sobrar tempo (< 60s) no fim → adicionar vinheta curta ou instrumental curto
+Se ultrapassar duração total → remover o item mais próximo do estouro do tipo com mais folga
+Registrar IDs usados em play_history (content_id, played_at, channel_id) para anti-repetição futura
+Tabela auxiliar:
+
+play_history
+- id, content_id (fk), channel_id (fk), played_at (timestamptz), programa_id (fk, opcional)
+- index: (channel_id, content_id, played_at)
+5. Compatibilidade
+Manter schedule atual funcionando — não remover. A grade nova é paralela.
+Adicionar flag usa_programas em channels para alternar qual modelo o canal usa.
+Endpoint GET /radio/now-playing precisa consultar primeiro a grade nova (se ativada) e cair pra schedule antiga se vazia.
+6. Sementes (seed data sugerida)
+Criar 7 programas padrão para o usuário ter ponto de partida:
+
+Madrugada Acolhedora (5h, bloco madrugada)
+Amanhecer Inspirador (3h, bloco amanhecer)
+Manhã com Deus (4h, bloco manha)
+Pausa do Almoço (2h, bloco almoco)
+Tarde Suave (3h, bloco tarde)
+Prime Adoração (1h, bloco prime)
+Devocional Profundo (2h, bloco devocional)
+Receitas baseadas no schedule-generator.ts atual do frontend.

@@ -12,6 +12,9 @@ import { RadioPlay, initRadioPlay } from "./RadioPlay.js";
 import { AiEvent, initAiEvent } from "./AiEvent.js";
 import { AutomationRule, initAutomationRule } from "./AutomationRule.js";
 import { AutomationLog, initAutomationLog } from "./AutomationLog.js";
+import { Programa, initPrograma } from "./Programa.js";
+import { GradePrograma, initGradePrograma } from "./GradePrograma.js";
+import { PlayHistory, initPlayHistory } from "./PlayHistory.js";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -28,6 +31,9 @@ initRadioPlay(sequelize);
 initAiEvent(sequelize);
 initAutomationRule(sequelize);
 initAutomationLog(sequelize);
+initPrograma(sequelize);
+initGradePrograma(sequelize);
+initPlayHistory(sequelize);
 
 Content.belongsTo(Category, { foreignKey: "categoria_id", as: "categoria", onDelete: "SET NULL" });
 Category.hasMany(Content, { foreignKey: "categoria_id", as: "contents" });
@@ -50,6 +56,27 @@ Content.hasMany(PlaylistItem, { foreignKey: "content_id", as: "playlistItems" })
 ContactMessage.belongsTo(User, { foreignKey: "respondido_por", as: "respondente", onDelete: "SET NULL" });
 User.hasMany(ContactMessage, { foreignKey: "respondido_por", as: "respostas" });
 
+// Programas
+Programa.belongsTo(Channel, { foreignKey: "channel_id", as: "channel", onDelete: "SET NULL" });
+Channel.hasMany(Programa, { foreignKey: "channel_id", as: "programas" });
+
+// Grade Programas
+GradePrograma.belongsTo(Programa, { foreignKey: "programa_id", as: "programa", onDelete: "CASCADE" });
+Programa.hasMany(GradePrograma, { foreignKey: "programa_id", as: "grade" });
+
+GradePrograma.belongsTo(Channel, { foreignKey: "channel_id", as: "channel" });
+Channel.hasMany(GradePrograma, { foreignKey: "channel_id", as: "gradeProgramas" });
+
+// Play History
+PlayHistory.belongsTo(Content, { foreignKey: "content_id", as: "content", onDelete: "CASCADE" });
+Content.hasMany(PlayHistory, { foreignKey: "content_id", as: "playHistory" });
+
+PlayHistory.belongsTo(Channel, { foreignKey: "channel_id", as: "channel" });
+Channel.hasMany(PlayHistory, { foreignKey: "channel_id", as: "playHistory" });
+
+PlayHistory.belongsTo(Programa, { foreignKey: "programa_id", as: "programa", onDelete: "SET NULL" });
+Programa.hasMany(PlayHistory, { foreignKey: "programa_id", as: "playHistory" });
+
 export async function syncDatabase(force = false): Promise<void> {
   if (env.nodeEnv === "production" && !env.syncDb) {
     logger.info("Production mode: skipping auto-sync — run migrations manually");
@@ -58,4 +85,11 @@ export async function syncDatabase(force = false): Promise<void> {
   await sequelize.sync({ force, alter: !force });
 }
 
-export { sequelize, User, Channel, Category, Content, Voice, Schedule, Playlist, PlaylistItem, ContactMessage, RadioPlay, AiEvent, AutomationRule, AutomationLog };
+export {
+  sequelize,
+  User, Channel, Category, Content, Voice,
+  Schedule, Playlist, PlaylistItem,
+  ContactMessage, RadioPlay, AiEvent,
+  AutomationRule, AutomationLog,
+  Programa, GradePrograma, PlayHistory,
+};

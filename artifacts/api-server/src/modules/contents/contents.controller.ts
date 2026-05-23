@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { contentsService } from "./contents.service.js";
 import { ok, created, noContent, paginated } from "../../utils/response.js";
 import { storageProvider } from "../../storage/index.js";
+import { extractAudioDuration } from "../../utils/audio-duration.js";
 
 function buildStorageKey(subdir: "audio" | "images", originalName: string): string {
   const ext = path.extname(originalName) || (subdir === "audio" ? ".mp3" : ".jpg");
@@ -18,6 +19,15 @@ async function resolveFileUrl(
     return storageProvider.upload(file.path, buildStorageKey(subdir, file.originalname));
   }
   return fallback as string | undefined;
+}
+
+/**
+ * Extract audio duration from a Multer file before it's uploaded to storage.
+ * Returns null if the file is not present or extraction fails.
+ */
+async function extractDurationFromFile(file: Express.Multer.File | undefined): Promise<number | null> {
+  if (!file) return null;
+  return extractAudioDuration(file.path);
 }
 
 export async function getAll(req: Request, res: Response): Promise<void> {
@@ -41,9 +51,13 @@ export async function getById(req: Request, res: Response): Promise<void> {
 export async function create(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+  const audioFile = files?.["audio"]?.[0];
+
+  // Extract duration from audio while file is still on disk (before storage upload)
+  const extractedDuration = await extractDurationFromFile(audioFile);
 
   const [audio_url, imagem_url] = await Promise.all([
-    resolveFileUrl(files?.["audio"]?.[0], "audio", body["audio_url"]),
+    resolveFileUrl(audioFile, "audio", body["audio_url"]),
     resolveFileUrl(files?.["imagem"]?.[0], "images", body["imagem_url"]),
   ]);
 
@@ -57,7 +71,8 @@ export async function create(req: Request, res: Response): Promise<void> {
       : [],
     categoria_id: body["categoria_id"] ? Number(body["categoria_id"]) : undefined,
     channel_id: body["channel_id"] ? Number(body["channel_id"]) : undefined,
-    duracao: body["duracao"] ? Number(body["duracao"]) : undefined,
+    // Prefer extracted duration from file; fall back to manually supplied value
+    duracao: extractedDuration ?? (body["duracao"] ? Number(body["duracao"]) : undefined),
     ativo: body["ativo"] !== undefined ? body["ativo"] === "true" || body["ativo"] === true : true,
   };
 
@@ -68,17 +83,18 @@ export async function create(req: Request, res: Response): Promise<void> {
 export async function update(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
   const files = req.files as Record<string, Express.Multer.File[]> | undefined;
+  const audioFile = files?.["audio"]?.[0];
+
+  // Re-extract duration if a new audio file was uploaded
+  const extractedDuration = await extractDurationFromFile(audioFile);
 
   const [audio_url, imagem_url] = await Promise.all([
-    resolveFileUrl(files?.["audio"]?.[0], "audio", body["audio_url"]),
+    resolveFileUrl(audioFile, "audio", body["audio_url"]),
     resolveFileUrl(files?.["imagem"]?.[0], "images", body["imagem_url"]),
   ]);
 
-  const dto = {
-    ...body,
-    audio_url,
-    imagem_url,
-  };
+  const dto: Record<string, unknown> = { ...body, audio_url, imagem_url };
+  if (extractedDuration !== null) dto["duracao"] = extractedDuration;
 
   const content = await contentsService.update(Number(req.params["id"]), dto);
   ok(res, content, "Conteúdo atualizado");
