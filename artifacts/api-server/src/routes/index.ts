@@ -20,6 +20,7 @@ import automationRouter from "../modules/automation/automation.routes.js";
 import { streamAdminRouter } from "../modules/stream/stream.routes.js";
 import programasRouter from "../modules/programas/programas.routes.js";
 import gradeProgramasRouter from "../modules/grade-programas/grade-programas.routes.js";
+import debugRouter from "../modules/debug/debug.routes.js";
 
 const router: IRouter = Router();
 
@@ -46,5 +47,6 @@ router.use("/admin/stream", streamAdminRouter);
 router.use("/realtime", realtimeRouter);
 router.use("/programas", programasRouter);
 router.use("/grade-programas", gradeProgramasRouter);
+router.use("/debug", debugRouter);
 
 export default router;

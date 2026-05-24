@@ -130,17 +130,32 @@ function cacheKey(prefix: string, data: unknown): string {
   return `${prefix}:${hash}`;
 }
 
+const PROVIDER_BASE_URLS: Record<string, string> = {
+  openrouter: "https://openrouter.ai/api/v1",
+  // OpenAI-compatible endpoint requires /v1beta/ prefix — missing it causes 404
+  gemini: "https://generativelanguage.googleapis.com/v1beta/openai/",
+};
+
 function buildOpenAIClient(): OpenAI {
-  const baseURLs: Record<string, string> = {
-    openrouter: "https://openrouter.ai/api/v1",
-    gemini: "https://generativelanguage.googleapis.com/openai/",
-  };
-  return new OpenAI({ apiKey: env.aiApiKey, baseURL: baseURLs[env.aiProvider] });
+  return new OpenAI({ apiKey: env.aiApiKey, baseURL: PROVIDER_BASE_URLS[env.aiProvider] });
+}
+
+/** Logs the effective config before each AI call — safe (key truncated to 8 chars). */
+function logAiCallConfig(label: string): void {
+  const keyPreview = env.aiApiKey ? `${env.aiApiKey.slice(0, 8)}…` : "(não definida)";
+  const baseUrl = PROVIDER_BASE_URLS[env.aiProvider] ?? "(openai default)";
+  logger.info(`${label}: config`, {
+    provider: env.aiProvider,
+    model: resolveModel(),
+    endpoint: baseUrl,
+    apiKeyPrefix: keyPreview,
+  });
 }
 
 async function chatOpenAI(systemPrompt: string, userPrompt: string): Promise<string> {
   const client = buildOpenAIClient();
   const model = resolveModel();
+  logAiCallConfig("chatOpenAI");
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), AI_TIMEOUT_MS);
   try {
@@ -157,6 +172,22 @@ async function chatOpenAI(systemPrompt: string, userPrompt: string): Promise<str
       { signal: controller.signal },
     );
     return response.choices[0]?.message.content?.trim() ?? "";
+  } catch (err) {
+    // Capture the full API error body for debugging
+    const apiErr = err as {
+      status?: number;
+      message?: string;
+      error?: unknown;
+      headers?: unknown;
+    };
+    logger.error("chatOpenAI: API error", {
+      provider: env.aiProvider,
+      model,
+      status: apiErr.status,
+      message: apiErr.message,
+      errorBody: apiErr.error,
+    });
+    throw err;
   } finally {
     clearTimeout(timer);
   }

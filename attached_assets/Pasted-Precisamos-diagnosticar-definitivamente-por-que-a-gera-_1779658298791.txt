@@ -1,0 +1,125 @@
+Precisamos diagnosticar definitivamente por que a geração IA via Gemini está falhando no backend da rádio.
+
+Contexto:
+- Stack: Node.js + Express + BullMQ + Redis
+- Provider IA atual: Gemini
+- Provider TTS: ElevenLabs
+- Storage: Cloudflare R2
+- Docker em produção
+- O restante do sistema está saudável (AutoDJ, playlists, SSE, R2 etc.)
+
+Erro atual nos logs:
+
+"provider":"gemini"
+"model":"gemini-1.5-flash"
+"err":"404 status code (no body)"
+"message":"AutomationService: AI generation failed"
+
+O pipeline atual é:
+AutomationService -> AiService.generateContent -> Gemini -> ElevenLabs -> MixService -> R2 -> Playlist
+
+O fluxo está morrendo ANTES do ElevenLabs.
+
+Precisamos fazer uma auditoria completa da integração Gemini.
+
+VALIDAR:
+
+1. Arquivo responsável pela integração Gemini
+- localizar AiService
+- localizar provider Gemini
+- localizar chamada HTTP real
+
+2. Validar endpoint utilizado
+Verificar se está usando endpoint antigo/inválido.
+
+Possíveis exemplos:
+https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent
+
+ou SDK nova do Google.
+
+3. Validar model name
+Hoje o sistema usa:
+gemini-1.5-flash
+
+Validar se:
+- modelo ainda existe
+- endpoint aceita ele
+- precisa trocar para:
+  - gemini-1.5-flash-latest
+  - gemini-2.0-flash
+
+4. Adicionar logs detalhados temporários
+Antes da chamada:
+- endpoint final
+- model
+- provider
+- payload resumido
+
+No catch:
+- status code
+- body completo
+- response.data
+- stack
+- headers relevantes
+
+Hoje o log mostra apenas:
+404 status code (no body)
+
+Isso não é suficiente.
+
+5. Validar .env carregado no container
+Precisamos confirmar:
+- GEMINI_API_KEY
+- GEMINI_MODEL
+- AI_PROVIDER
+
+Adicionar log seguro:
+- mostrar apenas primeiros 8 caracteres da key
+
+Exemplo:
+AIzaSyA...
+
+6. Verificar se a API Gemini está realmente habilitada no projeto Google
+Caso possível:
+- validar resposta da API
+- diferenciar:
+  - key inválida
+  - endpoint inválido
+  - model inválido
+  - projeto sem billing
+  - API não habilitada
+
+7. Criar rota temporária de teste
+Exemplo:
+POST /debug/gemini-test
+
+Que faça:
+- chamada simples ao Gemini
+- prompt curto
+- retorne resposta bruta
+
+Exemplo:
+"Escreva uma frase curta sobre esperança."
+
+8. Validar SDK instalada
+Verificar:
+- pacote utilizado
+- versão
+- compatibilidade com Gemini atual
+
+9. Validar se há fallback silencioso
+Garantir que:
+- erro não seja engolido
+- response.data seja logado
+
+10. Resultado esperado
+Ao final preciso saber EXATAMENTE:
+- qual endpoint está sendo usado
+- qual model está sendo usado
+- qual payload está sendo enviado
+- qual resposta REAL o Google retorna
+- qual a causa exata do 404
+- qual alteração precisa ser feita
+
+NÃO fazer respostas genéricas.
+Preciso da análise técnica real do backend.
