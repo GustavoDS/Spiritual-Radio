@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { authenticate, requireEditor } from "../../middlewares/auth.js";
 import { validate } from "../../middlewares/validate.js";
-import { synthesize, mix } from "./tts.controller.js";
+import { synthesize, mix, getJobStatus } from "./tts.controller.js";
 import { synthesizeTtsSchema } from "../../validation/schemas.js";
 
 const router = Router();
@@ -156,5 +156,59 @@ router.post("/synthesize", requireEditor, validate(synthesizeTtsSchema), synthes
  *         description: Falha no ffmpeg
  */
 router.post("/mix", requireEditor, mix);
+
+/**
+ * @openapi
+ * /api/tts/jobs/{id}:
+ *   get:
+ *     tags: [TTS]
+ *     summary: Consultar status de um job de síntese de voz
+ *     description: |
+ *       Faz polling até `status="completed"` para obter a URL real do áudio.
+ *       O campo `url` é `null` enquanto o job não terminou.
+ *       Jobs são removidos da fila após concluídos (limite: 50 mais recentes).
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: jobId retornado pelo POST /tts/synthesize
+ *     responses:
+ *       200:
+ *         description: Status do job
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     jobId:
+ *                       type: string
+ *                     status:
+ *                       type: string
+ *                       enum: [waiting, active, completed, failed, delayed]
+ *                     progress:
+ *                       type: number
+ *                       description: 0–100
+ *                     url:
+ *                       type: string
+ *                       nullable: true
+ *                       description: URL real do R2 — disponível apenas quando status=completed
+ *                     error:
+ *                       type: string
+ *                       nullable: true
+ *                       description: Mensagem de erro quando status=failed
+ *                     createdAt:
+ *                       type: string
+ *                       format: date-time
+ *       404:
+ *         description: Job não encontrado (expirado ou nunca existiu)
+ */
+router.get("/jobs/:id", getJobStatus);
 
 export default router;

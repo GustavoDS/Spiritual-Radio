@@ -150,7 +150,9 @@ export class VoiceService {
         outputPath,
       });
       logger.info("Voice synthesis job queued", { jobId: job.id });
-      return { filePath: outputPath, url: storageProvider.getUrl(outputPath), queued: true, jobId: String(job.id) };
+      // url is intentionally empty — the real URL is only known after the worker
+      // uploads to storage. Poll GET /api/tts/jobs/:id until status="done".
+      return { filePath: "", url: "", queued: true, jobId: String(job.id) };
     } catch {
       logger.warn("Redis unavailable — synthesizing inline", { voiceId: opts.voiceId });
       const result = await runSynthesis(opts.text, voice);

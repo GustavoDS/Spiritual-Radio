@@ -75,10 +75,16 @@ export function startContentProcessingWorker(): Worker {
   return worker;
 }
 
+export interface VoiceSynthesisJobResult {
+  url: string;
+  voiceId: number;
+  contentId?: number;
+}
+
 export function startVoiceSynthesisWorker(): Worker {
-  const worker = new Worker<VoiceSynthesisJobData>(
+  const worker = new Worker<VoiceSynthesisJobData, VoiceSynthesisJobResult>(
     "voice-synthesis",
-    async (job: Job<VoiceSynthesisJobData>) => {
+    async (job: Job<VoiceSynthesisJobData, VoiceSynthesisJobResult>) => {
       logger.info("Processing voice synthesis job", { jobId: job.id, voiceId: job.data.voiceId });
 
       const { voiceId, text, contentId } = job.data;
@@ -88,29 +94,35 @@ export function startVoiceSynthesisWorker(): Worker {
         throw new Error(`Voice ${voiceId} not found`);
       }
 
+      await job.updateProgress(10);
       const { url } = await runSynthesis(text, voice);
       logger.info("Voice synthesis complete", { jobId: job.id, url });
+      await job.updateProgress(90);
 
       if (contentId) {
         await Content.update({ audio_url: url }, { where: { id: contentId } });
         logger.info("Content audio_url updated", { contentId, url });
-      realtimeService.broadcastAdmin("tts_completed", {
-        contentId,
-        voiceId,
-        audioUrl: url,
-        trigger: "voice_synthesis",
-        ts: new Date().toISOString(),
-      });
+        realtimeService.broadcastAdmin("tts_completed", {
+          contentId,
+          voiceId,
+          audioUrl: url,
+          trigger: "voice_synthesis",
+          ts: new Date().toISOString(),
+        });
       }
 
       await job.updateProgress(100);
+      // Return the real URL as job result — accessible via GET /api/tts/jobs/:id
+      return { url, voiceId, contentId: contentId || undefined };
     },
     { connection: redisConnection, concurrency: 2 },
   );
 
-  worker.on("completed", (job) => logger.info("Voice synthesis completed", { jobId: job.id }));
+  worker.on("completed", (job, result: VoiceSynthesisJobResult) =>
+    logger.info("Voice synthesis completed", { jobId: job.id, url: result.url }),
+  );
   worker.on("failed", (job, err) => {
-    logger.error("Voice synthesis failed", { jobId: job?.id, err: err.message });
+    logger.error("Voice synthesis failed", { jobId: job?.id, err: err.message, stack: err.stack });
     realtimeService.broadcastAdmin("tts_failed", {
       jobId: job?.id,
       trigger: "voice_synthesis",

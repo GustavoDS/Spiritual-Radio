@@ -1,0 +1,79 @@
+Preciso debugar o pipeline de TTS → R2. Há duas evidências:
+
+1) Existe UM arquivo funcionando em produção:
+   https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/audio/tts-1779659047204-vsziuku2x8.mp3
+   → 200 OK, 23.449 bytes, content-type: audio/mpeg
+   Key real no bucket: "audio/tts-1779659047204-vsziuku2x8.mp3"
+
+2) O endpoint POST /api/tts/synthesize retorna URLs que NUNCA materializam.
+   Exemplo (job 111, voz Sarah id=4, acabou de ser enfileirado):
+   {
+     "success": true,
+     "data": {
+       "filePath": "uploads/audio/tts-1779659883401-yegu57xbbg.mp3",
+       "url": "https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/uploads/audio/tts-1779659883401-yegu57xbbg.mp3",
+       "queued": true,
+       "jobId": "111"
+     }
+   }
+   → HEAD nessa URL retorna 404 mesmo após 3+ minutos
+   → HEAD na variante sem "uploads/" (/audio/...) também 404
+   → Créditos da ElevenLabs ESTÃO sendo consumidos (a síntese roda)
+
+PROBLEMAS A INVESTIGAR:
+
+[A] Divergência de prefixo na key do R2
+    - O caso que funcionou está em "audio/..."
+    - A resposta do synthesize promete "uploads/audio/..."
+    - Confirmar no código do worker:
+      • Qual é o "Key" exato passado ao PutObjectCommand do S3 SDK?
+      • Qual é a string montada para o campo "url" na resposta do enqueue?
+      • Eles batem? Se não, alinhar os dois para o MESMO prefixo.
+
+[B] Upload silenciosamente falhando
+    - Job 111 consumiu crédito ElevenLabs mas não persistiu no R2.
+    - Procurar nos logs do worker (pm2 logs / journalctl / docker logs) por:
+      • jobId="111" ou file "tts-1779659883401-yegu57xbbg"
+      • Erros do SDK S3/R2: AccessDenied, SignatureDoesNotMatch,
+        NoSuchBucket, NetworkingError, TimeoutError, "Region is missing"
+      • Stack traces dentro de try/catch que possam estar sendo engolidos
+        (procurar por catch (e) {} ou catch sem console.error)
+
+[C] Configuração do cliente R2
+    Verificar variáveis de ambiente exportadas para o processo do worker:
+      • R2_ACCOUNT_ID
+      • R2_ACCESS_KEY_ID
+      • R2_SECRET_ACCESS_KEY
+      • R2_BUCKET (nome do bucket)
+      • R2_PUBLIC_URL (deveria ser https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev)
+      • endpoint do client S3: https://<account_id>.r2.cloudflarestorage.com
+      • region: "auto"
+
+[D] Permissões do token R2
+    O token de API do R2 usado pelo worker tem permissão "Object Read & Write"
+    no bucket correto? Testar manualmente:
+      aws s3 cp arquivo.mp3 s3://<bucket>/audio/teste.mp3 \
+        --endpoint-url https://<account_id>.r2.cloudflarestorage.com
+
+[E] Endpoint de status do job
+    Não existe GET /api/tts/jobs/:id nem /api/tts/queue (todos retornam 404).
+    Implementar pelo menos um endpoint para consultar:
+      • status do job (queued | processing | done | failed)
+      • erro (se failed)
+      • url final efetivamente gravada no R2 (após upload concluído)
+    Isso evita ter que adivinhar a URL pelo padrão de naming.
+
+[F] Race condition entre montar URL e upload
+    Hoje o synthesize devolve a URL ANTES do upload terminar (queued=true).
+    A URL é "previsão". O correto é:
+      1. Enqueue retorna apenas { jobId, status: "queued" }
+      2. Worker processa → faz upload → grava no banco a URL REAL
+      3. Cliente faz polling em GET /tts/jobs/:id até status="done"
+         e lê a "url" final dali.
+
+PEDIDO:
+- Tail dos logs do worker filtrando por jobId 111 e pela substring
+  "1779659883401" — me mande o que aparecer.
+- Confirmar se o key do PutObject usa prefixo "audio/" ou "uploads/audio/".
+- Confirmar se as env vars R2_* estão setadas no processo do worker
+  (pm2 env <id> ou systemctl show ou docker inspect).
