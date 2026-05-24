@@ -82,6 +82,17 @@ export async function syncDatabase(force = false): Promise<void> {
     logger.info("Production mode: skipping auto-sync — run migrations manually");
     return;
   }
+
+  if (env.nodeEnv === "production") {
+    // In production only CREATE missing tables — never ALTER existing ones.
+    // Sequelize's alter:true generates invalid FK syntax on pre-existing columns
+    // (e.g. ALTER COLUMN … SET DEFAULT NULL REFERENCES …) which PostgreSQL rejects.
+    // Schema changes on existing tables must be handled with explicit migrations.
+    await sequelize.sync({ force: false, alter: false });
+    logger.info("Production sync complete: missing tables created (alter skipped)");
+    return;
+  }
+
   await sequelize.sync({ force, alter: !force });
 }
 
