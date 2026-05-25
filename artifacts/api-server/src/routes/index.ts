@@ -21,6 +21,7 @@ import { streamAdminRouter } from "../modules/stream/stream.routes.js";
 import programasRouter from "../modules/programas/programas.routes.js";
 import gradeProgramasRouter from "../modules/grade-programas/grade-programas.routes.js";
 import debugRouter from "../modules/debug/debug.routes.js";
+import backgroundTracksRouter from "../modules/background-tracks/background-tracks.routes.js";
 
 const router: IRouter = Router();
 
@@ -48,5 +49,6 @@ router.use("/realtime", realtimeRouter);
 router.use("/programas", programasRouter);
 router.use("/grade-programas", gradeProgramasRouter);
 router.use("/debug", debugRouter);
+router.use("/admin/background-tracks", backgroundTracksRouter);
 
 export default router;

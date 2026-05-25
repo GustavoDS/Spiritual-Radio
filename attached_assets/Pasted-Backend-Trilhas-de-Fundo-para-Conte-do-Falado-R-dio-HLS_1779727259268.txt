@@ -1,0 +1,103 @@
+Backend — Trilhas de Fundo para Conteúdo Falado (Rádio HLS)
+Contexto
+A rádio web gera um stream HLS contínuo a partir de itens de conteúdo (música, oração, reflexão, mensagem, versículo). Hoje o player toca apenas o audio_url de cada item. No admin já existe um preview que mistura voz + trilha instrumental com ducking automático (a música abaixa quando há voz e sobe nas pausas).
+
+Precisamos levar essa mixagem para o stream real, para que todos os ouvintes escutem a voz com trilha de fundo nos itens falados (oração, reflexão, mensagem) — sem que isso afete os itens de música pura.
+
+O frontend já entrega:
+
+Biblioteca de trilhas instrumentais (id, nome, url, categoria, duração, tags).
+Configurações por tipo de conteúdo (enabled, volume base, ducking, fade in/out).
+Seleção de trilha (aleatória da categoria ou trilha fixa por item).
+Falta o backend renderizar o áudio final mixado antes de publicar no segmento HLS.
+
+O que precisa ser feito
+1. Modelo de dados
+Criar/estender as tabelas:
+
+-- Biblioteca de trilhas instrumentais
+create table background_tracks (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  url text not null,             -- arquivo em storage (mp3/wav/ogg)
+  category text not null,        -- 'oracao' | 'reflexao' | 'mensagem' | 'generico'
+  duration_seconds numeric,
+  tags text[] default '{}',
+  source text default 'manual',  -- 'manual' | 'elevenlabs'
+  prompt text,                   -- prompt usado se gerada por IA
+  created_at timestamptz default now()
+);
+
+-- Configuração por tipo de conteúdo
+create table background_track_settings (
+  content_type text primary key, -- 'oracao' | 'reflexao' | 'mensagem'
+  enabled boolean default true,
+  volume_base numeric default 0.25,    -- 0..1
+  ducking_db int default -18,          -- -12 / -18 / -24
+  fade_in_ms int default 1500,
+  fade_out_ms int default 2000,
+  default_category text                -- categoria padrão para sortear trilha
+);
+
+-- (Opcional) trilha fixa por item de conteúdo
+alter table contents add column background_track_id uuid references background_tracks(id);
+2. Endpoints REST
+GET/POST/PATCH/DELETE /api/admin/background-tracks — CRUD da biblioteca.
+GET/PATCH /api/admin/background-track-settings/:contentType — configurações.
+POST /api/admin/background-tracks/generate — gera trilha via ElevenLabs Music (prompt, duration_seconds, category) e salva no storage + tabela.
+Todos protegidos por auth de admin.
+
+3. Storage
+Bucket background-tracks (público para leitura, escrita restrita ao serviço). Aceitar mp3/wav/ogg até ~10 MB.
+
+4. Pipeline de mixagem (núcleo do trabalho)
+Quando um item de conteúdo for enfileirado para o stream HLS:
+
+Se content.type ∈ { oracao, reflexao, mensagem } e settings[type].enabled = true:
+Selecionar trilha: content.background_track_id se existir, senão sortear uma de category = type (ou default_category).
+Renderizar um arquivo mixado em cache: mixed_audio_url = mix(voice, track, settings).
+Caso contrário, usar audio_url direto.
+A mixagem deve ser feita com FFmpeg + sidechain compression (mesmo efeito do preview do admin):
+
+ffmpeg -i voice.mp3 -stream_loop -1 -i track.mp3 -filter_complex "
+  [1:a]volume=${volume_base}[bg];
+  [bg][0:a]sidechaincompress=
+      threshold=0.05:
+      ratio=8:
+      attack=5:
+      release=400:
+      makeup=1[ducked];
+  [ducked]afade=t=in:st=0:d=${fade_in_ms/1000},
+          afade=t=out:st=${voice_duration - fade_out_ms/1000}:d=${fade_out_ms/1000}[bgfinal];
+  [0:a][bgfinal]amix=inputs=2:duration=first:dropout_transition=0[out]
+" -map "[out]" -c:a libmp3lame -b:a 128k mixed.mp3
+Parâmetros vêm de background_track_settings. O threshold/ratio controla o quanto a música abaixa quando a voz aparece (ducking).
+
+5. Cache
+A mixagem é determinística — cachear por chave:
+
+sha256(voice_url + track_id + volume_base + ducking_db + fade_in + fade_out)
+Guardar mixed_audio_url em uma tabela mixed_audio_cache (ou coluna em contents). Invalidar quando settings/trilha mudarem.
+
+6. Integração com o gerador HLS
+No ponto onde hoje o encoder lê content.audio_url, ler content.mixed_audio_url ?? content.audio_url. Nenhuma mudança no player/cliente.
+
+7. Observabilidade
+Log do tempo de mixagem por item.
+Métrica de cache hit/miss.
+Erro se trilha indisponível → fallback para voz pura (não derrubar o stream).
+Critérios de aceite
+ Admin consegue criar/editar/remover trilhas e configurações via API.
+ Geração via ElevenLabs Music funciona e salva no storage.
+ Item de oração/reflexão/mensagem toca no stream HLS com música de fundo e ducking audível.
+ Item de música pura toca sem alteração.
+ Desligar enabled para um tipo remove a trilha do stream sem redeploy.
+ Mixagem é cacheada (segunda execução não re-renderiza).
+ Falha de trilha não interrompe o stream (fallback para voz pura + log).
+Variáveis de ambiente
+ELEVENLABS_API_KEY — geração de trilhas via IA.
+(já existentes) credenciais de storage e do serviço de encoding HLS.
+Referência
+Preview frontend já implementado em src/components/mixed-audio-preview.tsx (mesma lógica de ducking, em Web Audio). Serve como espec funcional do efeito desejado.
+Config UI em src/components/trilhas-tab.tsx mostra os parâmetros expostos.
+ElevenLabs Music API: POST https://api.elevenlabs.io/v1/music com { prompt, duration_seconds }, header xi-api-key. Retorna binário MP3.

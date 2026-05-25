@@ -15,6 +15,9 @@ import { AutomationLog, initAutomationLog } from "./AutomationLog.js";
 import { Programa, initPrograma } from "./Programa.js";
 import { GradePrograma, initGradePrograma } from "./GradePrograma.js";
 import { PlayHistory, initPlayHistory } from "./PlayHistory.js";
+import { BackgroundTrack, initBackgroundTrack } from "./BackgroundTrack.js";
+import { BackgroundTrackSettings, initBackgroundTrackSettings } from "./BackgroundTrackSettings.js";
+import { MixedAudioCache, initMixedAudioCache } from "./MixedAudioCache.js";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -34,6 +37,9 @@ initAutomationLog(sequelize);
 initPrograma(sequelize);
 initGradePrograma(sequelize);
 initPlayHistory(sequelize);
+initBackgroundTrack(sequelize);
+initBackgroundTrackSettings(sequelize);
+initMixedAudioCache(sequelize);
 
 Content.belongsTo(Category, { foreignKey: "categoria_id", as: "categoria", onDelete: "SET NULL" });
 Category.hasMany(Content, { foreignKey: "categoria_id", as: "contents" });
@@ -77,6 +83,19 @@ Channel.hasMany(PlayHistory, { foreignKey: "channel_id", as: "playHistory" });
 PlayHistory.belongsTo(Programa, { foreignKey: "programa_id", as: "programa", onDelete: "SET NULL" });
 Programa.hasMany(PlayHistory, { foreignKey: "programa_id", as: "playHistory" });
 
+/**
+ * Sync a single model's table, swallowing errors so one bad model never blocks others.
+ */
+async function syncModel(model: { sync: (opts: object) => Promise<unknown>; name?: string }, opts: object): Promise<void> {
+  try {
+    await model.sync(opts);
+  } catch (err) {
+    logger.warn(`syncDatabase: failed to sync model ${(model as { name?: string }).name ?? "?"}`, {
+      err: (err as Error).message,
+    });
+  }
+}
+
 export async function syncDatabase(force = false): Promise<void> {
   if (env.nodeEnv === "production" && !env.syncDb) {
     logger.info("Production mode: skipping auto-sync — run migrations manually");
@@ -93,8 +112,29 @@ export async function syncDatabase(force = false): Promise<void> {
     return;
   }
 
-  await sequelize.sync({ force, alter: !force });
+  // Dev: best-effort alter sync — some existing tables may fail ALTER (FK syntax bug in Sequelize+PG).
+  // We catch the top-level error and then individually ensure new/critical tables exist.
+  try {
+    await sequelize.sync({ force, alter: !force });
+  } catch (err) {
+    logger.warn("syncDatabase: global alter-sync had errors — ensuring individual tables", {
+      err: (err as Error).message,
+    });
+  }
+
+  // Always create new tables that may have been missed by the global sync.
+  const createOnly = { force: false, alter: false };
+  await Promise.all([
+    syncModel(BackgroundTrack, createOnly),
+    syncModel(BackgroundTrackSettings, createOnly),
+    syncModel(MixedAudioCache, createOnly),
+  ]);
+  logger.info("syncDatabase: background-track tables ensured");
 }
+
+// BackgroundTrack FK on Content (optional, no cascade delete — track deletion clears cache manually)
+Content.belongsTo(BackgroundTrack, { foreignKey: "background_track_id", as: "backgroundTrack", onDelete: "SET NULL", constraints: false });
+BackgroundTrack.hasMany(Content, { foreignKey: "background_track_id", as: "contents", constraints: false });
 
 export {
   sequelize,
@@ -103,4 +143,5 @@ export {
   ContactMessage, RadioPlay, AiEvent,
   AutomationRule, AutomationLog,
   Programa, GradePrograma, PlayHistory,
+  BackgroundTrack, BackgroundTrackSettings, MixedAudioCache,
 };

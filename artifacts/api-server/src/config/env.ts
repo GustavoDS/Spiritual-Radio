@@ -23,6 +23,7 @@ export const env = {
   ttsProvider: (process.env["TTS_PROVIDER"] ?? "openai") as "openai" | "elevenlabs",
   ttsApiKey: process.env["TTS_API_KEY"] ?? "",
   ttsModel: process.env["TTS_MODEL"] ?? "",
+  elevenLabsApiKey: process.env["ELEVENLABS_API_KEY"] ?? process.env["TTS_API_KEY"] ?? "",
 
   defaultChannelId: Number(process.env["DEFAULT_CHANNEL_ID"] ?? 1),
   syncDb: process.env["SYNC_DB"] === "true",
