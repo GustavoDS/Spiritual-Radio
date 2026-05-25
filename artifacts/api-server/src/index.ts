@@ -3,6 +3,7 @@ import { logger } from "./lib/logger.js";
 import { connectDatabase } from "./config/database.js";
 import { redis } from "./config/redis.js";
 import { syncDatabase } from "./models/index.js";
+import { runMigrations } from "./migrations/runner.js";
 import { env } from "./config/env.js";
 import { startContentProcessingWorker, startVoiceSynthesisWorker } from "./jobs/contentProcessingJob.js";
 import { startScheduleWorker } from "./jobs/scheduleJob.js";
@@ -148,6 +149,7 @@ async function generateImmediatePlaylists(): Promise<void> {
 async function bootstrap(): Promise<void> {
   try {
     await connectDatabase();
+    await runMigrations();
     await syncDatabase();
     logger.info("Database synchronized");
 

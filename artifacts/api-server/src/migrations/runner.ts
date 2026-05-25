@@ -5,10 +5,43 @@ import { logger } from "../lib/logger.js";
 
 type Ctx = { context: QueryInterface };
 
+// ---------------------------------------------------------------------------
+// Helpers — all migrations must be idempotent (DB may already have been
+// created via sequelize.sync() before migrations were introduced).
+// ---------------------------------------------------------------------------
+
+function getSeq(qi: QueryInterface): { query: (q: string, o?: object) => Promise<unknown[][]> } {
+  return (qi as unknown as { sequelize: { query: (q: string, o?: object) => Promise<unknown[][]> } }).sequelize;
+}
+
+async function sql(qi: QueryInterface, query: string): Promise<void> {
+  await getSeq(qi).query(query);
+}
+
+async function tableExists(qi: QueryInterface, tableName: string): Promise<boolean> {
+  const rows = await getSeq(qi).query(
+    `SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${tableName}' LIMIT 1`,
+    { type: "SELECT" } as object,
+  ) as unknown[][];
+  return Array.isArray(rows) && rows.length > 0;
+}
+
+async function columnExists(qi: QueryInterface, tableName: string, columnName: string): Promise<boolean> {
+  const rows = await getSeq(qi).query(
+    `SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${tableName}' AND column_name = '${columnName}' LIMIT 1`,
+    { type: "SELECT" } as object,
+  ) as unknown[][];
+  return Array.isArray(rows) && rows.length > 0;
+}
+
 const migrations = [
+  // ── Original schema ───────────────────────────────────────────────────────
+  // Guards: each migration checks whether the table/column already exists so
+  // it is safe to run against a DB that was bootstrapped via sequelize.sync().
   {
     name: "01-create-users",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "users")) return;
       await qi.createTable("users", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         nome: { type: DataTypes.STRING(255), allowNull: false },
@@ -24,6 +57,7 @@ const migrations = [
   {
     name: "02-create-channels",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "channels")) return;
       await qi.createTable("channels", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         nome: { type: DataTypes.STRING(255), allowNull: false },
@@ -38,6 +72,7 @@ const migrations = [
   {
     name: "03-create-categories",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "categories")) return;
       await qi.createTable("categories", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         nome: { type: DataTypes.STRING(255), allowNull: false, unique: true },
@@ -51,6 +86,7 @@ const migrations = [
   {
     name: "04-create-contents",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "contents")) return;
       await qi.createTable("contents", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         titulo: { type: DataTypes.STRING(500), allowNull: false },
@@ -75,6 +111,7 @@ const migrations = [
   {
     name: "05-create-voices",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "voices")) return;
       await qi.createTable("voices", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         nome: { type: DataTypes.STRING(255), allowNull: false },
@@ -92,6 +129,7 @@ const migrations = [
   {
     name: "06-create-schedules",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "schedules")) return;
       await qi.createTable("schedules", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         channel_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: "channels", key: "id" }, onDelete: "CASCADE" },
@@ -110,6 +148,7 @@ const migrations = [
   {
     name: "07-create-playlists",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "playlists")) return;
       await qi.createTable("playlists", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         channel_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: "channels", key: "id" }, onDelete: "CASCADE" },
@@ -126,6 +165,7 @@ const migrations = [
   {
     name: "08-create-playlist-items",
     async up({ context: qi }: Ctx) {
+      if (await tableExists(qi, "playlist_items")) return;
       await qi.createTable("playlist_items", {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         playlist_id: { type: DataTypes.INTEGER, allowNull: false, references: { model: "playlists", key: "id" }, onDelete: "CASCADE" },
@@ -144,6 +184,7 @@ const migrations = [
   {
     name: "09-add-voice-id-externo",
     async up({ context: qi }: Ctx) {
+      if (await columnExists(qi, "voices", "voice_id_externo")) return;
       await qi.addColumn("voices", "voice_id_externo", {
         type: DataTypes.STRING(255),
         allowNull: true,
@@ -153,6 +194,349 @@ const migrations = [
     async down({ context: qi }: Ctx) {
       await qi.removeColumn("voices", "voice_id_externo");
     },
+  },
+
+  // ── New tables added via sync only — now made explicit ────────────────────
+
+  {
+    name: "10-create-contact-messages",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        DO $$ BEGIN
+          CREATE TYPE "enum_contact_messages_tipo" AS ENUM ('contato','pedido_oracao','testemunho','sugestao');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        DO $$ BEGIN
+          CREATE TYPE "enum_contact_messages_status" AS ENUM ('novo','em_analise','respondido','arquivado');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        DO $$ BEGIN
+          CREATE TYPE "enum_contact_messages_prioridade" AS ENUM ('baixa','normal','alta','urgente');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        CREATE TABLE IF NOT EXISTS contact_messages (
+          id            SERIAL PRIMARY KEY,
+          nome          VARCHAR(255)                          NOT NULL,
+          email         VARCHAR(255),
+          telefone      VARCHAR(50),
+          assunto       VARCHAR(255)                          NOT NULL,
+          mensagem      TEXT                                  NOT NULL,
+          tipo          "enum_contact_messages_tipo"          NOT NULL DEFAULT 'contato',
+          status        "enum_contact_messages_status"        NOT NULL DEFAULT 'novo',
+          prioridade    "enum_contact_messages_prioridade"    NOT NULL DEFAULT 'normal',
+          canal_origem  VARCHAR(100),
+          ip            VARCHAR(45),
+          user_agent    VARCHAR(500),
+          resposta_admin TEXT,
+          respondido_por INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          respondido_em TIMESTAMPTZ,
+          lido_em       TIMESTAMPTZ,
+          "createdAt"   TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "updatedAt"   TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("contact_messages"); },
+  },
+
+  {
+    name: "11-create-radio-plays",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS radio_plays (
+          id          SERIAL PRIMARY KEY,
+          channel_id  INTEGER,
+          content_id  INTEGER,
+          titulo      VARCHAR(512) NOT NULL DEFAULT '(desconhecido)',
+          tipo        VARCHAR(64)  NOT NULL DEFAULT 'desconhecido',
+          played_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          "createdAt" TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS radio_plays_channel_id ON radio_plays (channel_id);
+        CREATE INDEX IF NOT EXISTS radio_plays_content_id ON radio_plays (content_id);
+        CREATE INDEX IF NOT EXISTS radio_plays_played_at  ON radio_plays (played_at);
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("radio_plays"); },
+  },
+
+  {
+    name: "12-create-ai-events",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        DO $$ BEGIN
+          CREATE TYPE "enum_ai_events_event_type" AS ENUM ('ai_generation','tts_synthesis');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        CREATE TABLE IF NOT EXISTS ai_events (
+          id                 SERIAL PRIMARY KEY,
+          event_type         "enum_ai_events_event_type" NOT NULL,
+          provider           VARCHAR(64)  NOT NULL,
+          model              VARCHAR(128),
+          chars_in           INTEGER      NOT NULL DEFAULT 0,
+          tokens_est         INTEGER,
+          cost_usd_est       FLOAT,
+          duration_ms        INTEGER      NOT NULL DEFAULT 0,
+          success            BOOLEAN      NOT NULL DEFAULT true,
+          error              TEXT,
+          content_id         INTEGER,
+          audio_duration_sec FLOAT,
+          "createdAt"        TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS ai_events_event_type ON ai_events (event_type);
+        CREATE INDEX IF NOT EXISTS ai_events_created_at ON ai_events ("createdAt");
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("ai_events"); },
+  },
+
+  {
+    name: "13-create-automation-rules",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        DO $$ BEGIN
+          CREATE TYPE "enum_automation_rules_period" AS ENUM (
+            'madrugada','morning','afternoon','evening','night','sunday','holiday','special'
+          );
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        CREATE TABLE IF NOT EXISTS automation_rules (
+          id               SERIAL PRIMARY KEY,
+          channel_id       INTEGER,
+          period           "enum_automation_rules_period" NOT NULL,
+          enabled          BOOLEAN   NOT NULL DEFAULT true,
+          content_types    TEXT[]    NOT NULL DEFAULT ARRAY['devocional'],
+          topics           TEXT[]    NOT NULL DEFAULT '{}',
+          voice_style      VARCHAR(50) NOT NULL DEFAULT 'calm',
+          min_duration_sec INTEGER   NOT NULL DEFAULT 60,
+          max_duration_sec INTEGER   NOT NULL DEFAULT 300,
+          generation_limit INTEGER   NOT NULL DEFAULT 3,
+          cooldown_hours   INTEGER   NOT NULL DEFAULT 4,
+          auto_generate    BOOLEAN   NOT NULL DEFAULT true,
+          auto_publish     BOOLEAN   NOT NULL DEFAULT true,
+          tts_enabled      BOOLEAN   NOT NULL DEFAULT true,
+          priority_level   INTEGER   NOT NULL DEFAULT 5,
+          "createdAt"      TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "updatedAt"      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS automation_rules_period     ON automation_rules (period);
+        CREATE INDEX IF NOT EXISTS automation_rules_channel_id ON automation_rules (channel_id);
+        CREATE INDEX IF NOT EXISTS automation_rules_enabled    ON automation_rules (enabled);
+        CREATE UNIQUE INDEX IF NOT EXISTS automation_rules_channel_period
+          ON automation_rules (channel_id, period) WHERE channel_id IS NOT NULL;
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("automation_rules"); },
+  },
+
+  {
+    name: "14-create-automation-logs",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        DO $$ BEGIN
+          CREATE TYPE "enum_automation_logs_triggered_by" AS ENUM ('scheduler','manual','gap_fill','fallback');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        DO $$ BEGIN
+          CREATE TYPE "enum_automation_logs_status" AS ENUM ('started','running','completed','failed','partial');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        CREATE TABLE IF NOT EXISTS automation_logs (
+          id                  SERIAL PRIMARY KEY,
+          run_id              UUID         NOT NULL,
+          channel_id          INTEGER,
+          period              VARCHAR(30)  NOT NULL,
+          triggered_by        "enum_automation_logs_triggered_by" NOT NULL DEFAULT 'scheduler',
+          status              "enum_automation_logs_status"       NOT NULL DEFAULT 'started',
+          contents_generated  INTEGER      NOT NULL DEFAULT 0,
+          contents_failed     INTEGER      NOT NULL DEFAULT 0,
+          cost_usd_est        DECIMAL(12,8) NOT NULL DEFAULT 0,
+          duration_ms         INTEGER,
+          error               TEXT,
+          metadata            JSONB,
+          "createdAt"         TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          "updatedAt"         TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS automation_logs_run_id      ON automation_logs (run_id);
+        CREATE INDEX IF NOT EXISTS automation_logs_channel_id  ON automation_logs (channel_id);
+        CREATE INDEX IF NOT EXISTS automation_logs_period      ON automation_logs (period);
+        CREATE INDEX IF NOT EXISTS automation_logs_status      ON automation_logs (status);
+        CREATE INDEX IF NOT EXISTS automation_logs_created_at  ON automation_logs ("createdAt");
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("automation_logs"); },
+  },
+
+  {
+    name: "15-create-programas",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        DO $$ BEGIN
+          CREATE TYPE "enum_programas_bloco" AS ENUM (
+            'madrugada','amanhecer','manha','almoco','tarde','prime','noite','devocional','sleep','custom'
+          );
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        CREATE TABLE IF NOT EXISTS programas (
+          id          SERIAL PRIMARY KEY,
+          nome        VARCHAR(255) NOT NULL,
+          descricao   TEXT,
+          duracao_min INTEGER      NOT NULL,
+          bloco       "enum_programas_bloco" NOT NULL,
+          receita     JSONB        NOT NULL DEFAULT '[]',
+          regras      JSONB        NOT NULL DEFAULT '{}',
+          channel_id  INTEGER,
+          ativo       BOOLEAN      NOT NULL DEFAULT true,
+          "createdAt" TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          "updatedAt" TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS programas_channel_id ON programas (channel_id);
+        CREATE INDEX IF NOT EXISTS programas_bloco      ON programas (bloco);
+        CREATE INDEX IF NOT EXISTS programas_ativo      ON programas (ativo);
+        CREATE UNIQUE INDEX IF NOT EXISTS programas_channel_nome
+          ON programas (channel_id, nome) WHERE ativo = true;
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("programas"); },
+  },
+
+  {
+    name: "16-create-grade-programas",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS grade_programas (
+          id              SERIAL PRIMARY KEY,
+          programa_id     INTEGER NOT NULL REFERENCES programas(id)  ON DELETE CASCADE,
+          channel_id      INTEGER NOT NULL REFERENCES channels(id),
+          horario_inicio  TIME    NOT NULL,
+          dias_semana     INTEGER[] NOT NULL DEFAULT '{}',
+          data            DATE,
+          prioridade      INTEGER NOT NULL DEFAULT 0,
+          ativo           BOOLEAN NOT NULL DEFAULT true,
+          "createdAt"     TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "updatedAt"     TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS grade_programas_programa_id    ON grade_programas (programa_id);
+        CREATE INDEX IF NOT EXISTS grade_programas_channel_id     ON grade_programas (channel_id);
+        CREATE INDEX IF NOT EXISTS grade_programas_horario_inicio ON grade_programas (horario_inicio);
+        CREATE INDEX IF NOT EXISTS grade_programas_data           ON grade_programas (data);
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("grade_programas"); },
+  },
+
+  {
+    name: "17-create-play-history",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS play_history (
+          id          SERIAL PRIMARY KEY,
+          content_id  INTEGER NOT NULL REFERENCES contents(id)  ON DELETE CASCADE,
+          channel_id  INTEGER NOT NULL REFERENCES channels(id),
+          played_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+          programa_id INTEGER REFERENCES programas(id) ON DELETE SET NULL,
+          "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS play_history_content_id  ON play_history (content_id);
+        CREATE INDEX IF NOT EXISTS play_history_channel_id  ON play_history (channel_id);
+        CREATE INDEX IF NOT EXISTS play_history_played_at   ON play_history (played_at);
+        CREATE INDEX IF NOT EXISTS play_history_programa_id ON play_history (programa_id);
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("play_history"); },
+  },
+
+  // ── Background Tracks feature ─────────────────────────────────────────────
+
+  {
+    name: "18-contents-add-background-track-fields",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE contents
+          ADD COLUMN IF NOT EXISTS mixed_audio_url     TEXT,
+          ADD COLUMN IF NOT EXISTS background_track_id UUID;
+
+        COMMENT ON COLUMN contents.mixed_audio_url IS
+          'Pre-rendered mix of voice + background track. Used by HLS stream instead of audio_url when set.';
+        COMMENT ON COLUMN contents.background_track_id IS
+          'Fixed background track UUID. If null, a random track from the category is used at mix time.';
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE contents
+          DROP COLUMN IF EXISTS mixed_audio_url,
+          DROP COLUMN IF EXISTS background_track_id;
+      `);
+    },
+  },
+
+  {
+    name: "19-create-background-tracks",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        DO $$ BEGIN
+          CREATE TYPE "enum_background_tracks_category" AS ENUM ('oracao','reflexao','mensagem','generico');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+        DO $$ BEGIN
+          CREATE TYPE "enum_background_tracks_source" AS ENUM ('manual','elevenlabs');
+        EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+        CREATE TABLE IF NOT EXISTS background_tracks (
+          id               UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+          name             VARCHAR(255) NOT NULL,
+          url              TEXT        NOT NULL,
+          category         "enum_background_tracks_category" NOT NULL DEFAULT 'generico',
+          duration_seconds DECIMAL(10,2),
+          tags             TEXT[]      NOT NULL DEFAULT '{}',
+          source           "enum_background_tracks_source"   NOT NULL DEFAULT 'manual',
+          prompt           TEXT,
+          "createdAt"      TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS background_tracks_category ON background_tracks (category);
+        CREATE INDEX IF NOT EXISTS background_tracks_source   ON background_tracks (source);
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("background_tracks"); },
+  },
+
+  {
+    name: "20-create-background-track-settings",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS background_track_settings (
+          content_type     VARCHAR(100) PRIMARY KEY,
+          enabled          BOOLEAN      NOT NULL DEFAULT true,
+          volume_base      NUMERIC(5,2) NOT NULL DEFAULT 0.25,
+          ducking_db       INTEGER      NOT NULL DEFAULT -18,
+          fade_in_ms       INTEGER      NOT NULL DEFAULT 1500,
+          fade_out_ms      INTEGER      NOT NULL DEFAULT 2000,
+          default_category VARCHAR(100)
+        );
+
+        COMMENT ON COLUMN background_track_settings.content_type IS 'oracao | reflexao | mensagem';
+        COMMENT ON COLUMN background_track_settings.volume_base  IS 'Background volume 0..1';
+        COMMENT ON COLUMN background_track_settings.ducking_db   IS 'Approximate ducking depth in dB (controls sidechain ratio)';
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("background_track_settings"); },
+  },
+
+  {
+    name: "21-create-mixed-audio-cache",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS mixed_audio_cache (
+          id           SERIAL PRIMARY KEY,
+          hash         VARCHAR(64)  NOT NULL UNIQUE,
+          url          TEXT         NOT NULL,
+          duration_sec INTEGER,
+          "createdAt"  TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS mixed_audio_cache_hash ON mixed_audio_cache (hash);
+
+        COMMENT ON COLUMN mixed_audio_cache.hash IS 'SHA-256 of voice_url + track_id + mix settings';
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("mixed_audio_cache"); },
   },
 ];
 
@@ -171,10 +555,12 @@ export const umzug = new Umzug({
 export async function runMigrations(): Promise<void> {
   const pending = await umzug.pending();
   if (pending.length === 0) {
-    logger.info("No pending migrations");
+    logger.info("migrations: no pending migrations");
     return;
   }
-  logger.info(`Running ${pending.length} pending migration(s)`);
+  logger.info(`migrations: running ${pending.length} pending migration(s)`, {
+    names: pending.map((m) => m.name),
+  });
   await umzug.up();
-  logger.info("All migrations applied successfully");
+  logger.info("migrations: all applied successfully");
 }
