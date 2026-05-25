@@ -540,15 +540,26 @@ const migrations = [
   },
 ];
 
+function umzugLog(level: "info" | "warn" | "error" | "debug", m: unknown): void {
+  if (typeof m === "string") {
+    logger[level](m);
+    return;
+  }
+  const obj = m as Record<string, unknown>;
+  const event = typeof obj.event === "string" ? obj.event : level;
+  const name  = typeof obj.name  === "string" ? obj.name  : undefined;
+  logger[level](`migration: ${event}`, name ? { name, ...obj } : obj);
+}
+
 export const umzug = new Umzug({
   migrations,
   context: sequelize.getQueryInterface(),
   storage: new SequelizeStorage({ sequelize }),
   logger: {
-    info: (m) => logger.info(String(m)),
-    warn: (m) => logger.warn(String(m)),
-    error: (m) => logger.error(String(m)),
-    debug: (m) => logger.debug(String(m)),
+    info:  (m) => umzugLog("info",  m),
+    warn:  (m) => umzugLog("warn",  m),
+    error: (m) => umzugLog("error", m),
+    debug: (m) => umzugLog("debug", m),
   },
 });
 
