@@ -595,6 +595,44 @@ const migrations = [
   },
 
   {
+    name: "25-vinhetas-add-bed-and-sfx",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE vinhetas
+          ADD COLUMN IF NOT EXISTS background_track_id UUID NULL REFERENCES background_tracks(id) ON DELETE SET NULL,
+          ADD COLUMN IF NOT EXISTS sfx_intro_url       TEXT NULL,
+          ADD COLUMN IF NOT EXISTS sfx_outro_url       TEXT NULL,
+          ADD COLUMN IF NOT EXISTS bed_volume_db       INTEGER NOT NULL DEFAULT -20,
+          ADD COLUMN IF NOT EXISTS ducking_enabled     BOOLEAN NOT NULL DEFAULT true;
+
+        CREATE INDEX IF NOT EXISTS idx_vinhetas_background_track
+          ON vinhetas (background_track_id);
+
+        COMMENT ON COLUMN vinhetas.background_track_id IS
+          'Bed musical track played underneath the TTS voice. NULL = no bed.';
+        COMMENT ON COLUMN vinhetas.sfx_intro_url IS
+          'URL of the intro stinger SFX. Generated via ElevenLabs Sound Effects API and cached in storage.';
+        COMMENT ON COLUMN vinhetas.sfx_outro_url IS
+          'URL of the optional outro stinger SFX.';
+        COMMENT ON COLUMN vinhetas.bed_volume_db IS
+          'Bed track volume in dB relative to voice (default -20 = very soft background).';
+        COMMENT ON COLUMN vinhetas.ducking_enabled IS
+          'If true, the bed is ducked (sidechaincompress) when the voice is present.';
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE vinhetas
+          DROP COLUMN IF EXISTS background_track_id,
+          DROP COLUMN IF EXISTS sfx_intro_url,
+          DROP COLUMN IF EXISTS sfx_outro_url,
+          DROP COLUMN IF EXISTS bed_volume_db,
+          DROP COLUMN IF EXISTS ducking_enabled;
+      `);
+    },
+  },
+
+  {
     name: "24-contents-add-usa-vinheta-automatica",
     async up({ context: qi }: Ctx) {
       await sql(qi, `

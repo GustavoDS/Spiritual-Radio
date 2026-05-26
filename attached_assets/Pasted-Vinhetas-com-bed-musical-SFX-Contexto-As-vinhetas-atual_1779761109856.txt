@@ -1,0 +1,120 @@
+Vinhetas com bed musical + SFX
+Contexto
+As vinhetas atualmente são apenas TTS "seco" (voz isolada), o que destoa de uma rádio profissional. Precisamos enriquecer com:
+
+SFX stinger curto antes e depois da voz (whoosh / chime / sweep)
+Bed musical em loop por baixo da voz, com volume reduzido e ducking opcional
+Normalização de loudness (-16 LUFS) para nivelar com o resto do conteúdo
+Cache no R2 dos assets gerados (SFX) e do áudio final mixado
+A mixagem é feita com ffmpeg (já disponível no servidor). SFX é gerado via ElevenLabs Sound Effects API (POST https://api.elevenlabs.io/v1/sound-generation).
+
+1. Migração — 25-vinhetas-add-bed-and-sfx
+ALTER TABLE vinhetas
+  ADD COLUMN background_track_id INTEGER NULL REFERENCES background_tracks(id) ON DELETE SET NULL,
+  ADD COLUMN sfx_intro_url TEXT NULL,
+  ADD COLUMN sfx_outro_url TEXT NULL,
+  ADD COLUMN bed_volume_db INTEGER NOT NULL DEFAULT -20,
+  ADD COLUMN ducking_enabled BOOLEAN NOT NULL DEFAULT true;
+
+CREATE INDEX idx_vinhetas_background_track ON vinhetas(background_track_id);
+Atualizar models/Vinheta.ts com os 5 novos campos e relacionamento belongsTo(BackgroundTrack, { as: 'background_track', foreignKey: 'background_track_id' }).
+
+2. Novo módulo modules/vinhetas/vinhetas-sfx.service.ts
+Catálogo fixo de 6 stingers padrão, um por tipo_vinheta:
+
+export const SFX_CATALOG: Record<TipoVinheta, { intro: string; outro?: string; duration: number }> = {
+  abertura:           { intro: "Cinematic radio station opener: warm rising synth swell with a soft chime hit at the end, 2 seconds", duration: 2 },
+  encerramento:       { intro: "Gentle radio sign-off: descending warm pad with a single soft bell, peaceful, 2 seconds", duration: 2 },
+  transicao:          { intro: "Smooth radio transition whoosh, airy and modern, 1 second", duration: 1 },
+  antes_de_oracao:    { intro: "Reverent soft chime with subtle reverb, sacred atmosphere, 1.5 seconds", duration: 1.5 },
+  antes_de_mensagem:  { intro: "Gentle warm bell with subtle pad swell, contemplative, 1.5 seconds", duration: 1.5 },
+  antes_de_versiculo: { intro: "Single delicate harp pluck with light reverb, biblical mood, 1.5 seconds", duration: 1.5 },
+};
+Funções:
+
+generateSfxForType(tipo: TipoVinheta): Promise<{ intro_url, outro_url? }> → chama ElevenLabs SFX, faz upload no R2 em vinhetas/sfx/{tipo}_{hash}.mp3, retorna URLs. → Cacheia: se já existe SFX para esse tipo no R2 (lookup por path determinístico), reutiliza.
+
+seedAllSfx(): Promise<{ created: number; skipped: number }> → gera os 6 stingers e devolve mapa { tipo → urls }.
+
+Endpoint
+POST /api/vinhetas/sfx/seed
+  → body: opcional { force?: boolean }  (force = regerar mesmo se já existir)
+  → response: { items: [{ tipo, intro_url, outro_url }] }
+Chamada ElevenLabs SFX
+const res = await fetch("https://api.elevenlabs.io/v1/sound-generation", {
+  method: "POST",
+  headers: {
+    "xi-api-key": process.env.ELEVENLABS_API_KEY!,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    text: prompt,
+    duration_seconds: durationSeconds,   // 0.5 – 22
+    prompt_influence: 0.4,
+  }),
+});
+const buffer = Buffer.from(await res.arrayBuffer());
+3. Pipeline de mixagem — atualizar vinhetas.service.ts → gerarAudio(id, voiceId?)
+Substituir o fluxo atual (TTS direto) por:
+
+1. Gerar TTS da voz   → /tmp/{id}_voice.mp3
+2. Resolver assets:
+   - sfx_intro_url  (na vinheta; se faltar, busca em SFX_CATALOG por tipo)
+   - sfx_outro_url  (idem; opcional)
+   - bed_url        (background_track.audio_url, se background_track_id)
+3. Baixar tudo para /tmp
+4. ffmpeg mix (ver comando abaixo)
+5. Loudness normalize (loudnorm I=-16 LRA=11 TP=-1.5)
+6. Upload do resultado para R2: vinhetas/final/{id}_{ts}.mp3
+7. UPDATE vinhetas SET audio_url = <url>, duracao_sec = <medida>
+Comando ffmpeg (caso com bed + ducking + intro + outro)
+ffmpeg -y \
+  -i intro.mp3 \
+  -i voice.mp3 \
+  -i bed.mp3 \
+  -i outro.mp3 \
+  -filter_complex "
+    [2:a]aloop=loop=-1:size=2e+09,volume={BED_VOLUME_DB}dB[bedloop];
+    [1:a][bedloop]sidechaincompress=threshold=0.05:ratio=8:attack=5:release=300[voiced];
+    [voiced]apad=pad_dur=0.3[voicedp];
+    [0:a][voicedp][3:a]concat=n=3:v=0:a=1[mixed];
+    [mixed]loudnorm=I=-16:LRA=11:TP=-1.5[out]
+  " \
+  -map "[out]" -c:a libmp3lame -b:a 192k -ar 44100 output.mp3
+Casos sem bed → remove [2:a]…[bedloop] e troca sidechaincompress por passthrough do [1:a]. Casos sem intro/outro → remove as entradas correspondentes e ajusta concat=n=. Se ducking_enabled = false, troca sidechaincompress por amix=inputs=2:duration=first:weights=1 0.4.
+
+Implemente como um builder que monta o filter_complex dinamicamente conforme os assets disponíveis.
+
+4. Seed das 54 vinhetas — atualizar seed
+Ao criar cada vinheta no POST /api/vinhetas/seed, associar:
+
+background_track_id: pegar a primeira background_track cujo tags contenha o nome do bloco (madrugada, prime, etc). Se não houver match, deixar NULL — o pipeline funciona sem bed.
+sfx_intro_url / sfx_outro_url: se já existir SFX seedado para aquele tipo (consultar mapa do vinhetas-sfx.service), preencher. Caso contrário, deixar NULL — o pipeline busca no catálogo na hora do gerarAudio.
+5. Endpoint de reprocessamento em lote
+POST /api/vinhetas/regenerar-todas
+  → body: { only_missing_audio?: boolean }   (default false)
+  → response: { queued: number }
+Roda gerarAudio em sequência (com Promise controlado, max 3 paralelos) em todas as vinhetas ativas. Útil para aplicar a nova mixagem em vinhetas que já existem com áudio antigo.
+
+6. Variáveis de ambiente
+Já existem:
+
+ELEVENLABS_API_KEY
+credenciais R2
+Nenhuma nova necessária.
+
+Ordem de implementação sugerida
+Migração 25
+vinhetas-sfx.service.ts + endpoint /sfx/seed
+Refatorar gerarAudio com o pipeline ffmpeg
+Atualizar seed para associar bed + sfx
+Endpoint /regenerar-todas
+Smoke test: rodar /sfx/seed → /regenerar-todas → ouvir 1 vinheta de cada tipo
+Critérios de aceite
+ POST /vinhetas/sfx/seed retorna 6 SFX gerados e armazenados no R2
+ Reexecutar seed sem force reusa os SFX existentes (não consome créditos ElevenLabs)
+ Vinheta com background_track_id toca com bed musical perceptível, mas a voz fica clara (ducking funciona)
+ Vinheta sem bed toca com SFX intro + voz + SFX outro, sem silêncios estranhos
+ audio_url final está normalizado em ~-16 LUFS (medir com ffmpeg -i ... -af ebur128 -f null -)
+ duracao_sec é atualizado corretamente após a mixagem
+ POST /vinhetas/regenerar-todas processa todas as vinhetas sem travar o servidor

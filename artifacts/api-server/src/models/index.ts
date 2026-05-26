@@ -149,6 +149,10 @@ Channel.hasMany(Vinheta, { foreignKey: "channel_id", as: "vinhetas" });
 VinhetaExecucao.belongsTo(Vinheta, { foreignKey: "vinheta_id", as: "vinheta", onDelete: "CASCADE" });
 Vinheta.hasMany(VinhetaExecucao, { foreignKey: "vinheta_id", as: "execucoes" });
 
+// Vinheta ↔ BackgroundTrack (bed musical)
+Vinheta.belongsTo(BackgroundTrack, { foreignKey: "background_track_id", as: "background_track", constraints: false });
+BackgroundTrack.hasMany(Vinheta, { foreignKey: "background_track_id", as: "vinhetas_com_bed", constraints: false });
+
 export {
   sequelize,
   User, Channel, Category, Content, Voice,

@@ -30,6 +30,12 @@ export class Vinheta extends Model {
   declare voice_id: string | null;
   declare ativo: boolean;
   declare prioridade: number;
+  // Bed + SFX fields (migration 25)
+  declare background_track_id: string | null; // UUID FK → background_tracks.id
+  declare sfx_intro_url: string | null;
+  declare sfx_outro_url: string | null;
+  declare bed_volume_db: number;
+  declare ducking_enabled: boolean;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 }
@@ -52,6 +58,37 @@ export function initVinheta(sequelize: Sequelize): void {
       },
       ativo: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
       prioridade: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+      // Bed + SFX (migration 25)
+      background_track_id: {
+        type: DataTypes.UUID,
+        allowNull: true,
+        defaultValue: null,
+        comment: "FK → background_tracks.id. Bed musical played underneath the voice.",
+      },
+      sfx_intro_url: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        defaultValue: null,
+        comment: "URL of the intro stinger SFX. Generated via ElevenLabs Sound Effects API.",
+      },
+      sfx_outro_url: {
+        type: DataTypes.TEXT,
+        allowNull: true,
+        defaultValue: null,
+        comment: "URL of the outro stinger SFX (optional).",
+      },
+      bed_volume_db: {
+        type: DataTypes.INTEGER,
+        allowNull: false,
+        defaultValue: -20,
+        comment: "Bed track volume in dB (e.g. -20 = very soft background).",
+      },
+      ducking_enabled: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+        comment: "If true, sidechaincompress ducks the bed when voice is present.",
+      },
     },
     {
       sequelize,

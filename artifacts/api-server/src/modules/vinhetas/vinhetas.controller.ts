@@ -1,13 +1,11 @@
 import type { Request, Response } from "express";
 import { vinhetasService } from "./vinhetas.service.js";
+import { vinhetasSfxService } from "./vinhetas-sfx.service.js";
 import { ok, created, noContent, paginated } from "../../utils/response.js";
 import type { CreateVinhetaInput } from "./vinhetas.service.js";
 
 export async function getAll(req: Request, res: Response): Promise<void> {
-  const {
-    channel_id, bloco, tipo_vinheta, ativo, page, limit,
-  } = req.query as Record<string, string | undefined>;
-
+  const { channel_id, bloco, tipo_vinheta, ativo, page, limit } = req.query as Record<string, string | undefined>;
   const result = await vinhetasService.findAll({
     channel_id: channel_id !== undefined ? Number(channel_id) : undefined,
     bloco,
@@ -25,8 +23,7 @@ export async function getById(req: Request, res: Response): Promise<void> {
 }
 
 export async function create(req: Request, res: Response): Promise<void> {
-  const body = req.body as CreateVinhetaInput;
-  created(res, await vinhetasService.create(body));
+  created(res, await vinhetasService.create(req.body as CreateVinhetaInput));
 }
 
 export async function update(req: Request, res: Response): Promise<void> {
@@ -49,4 +46,16 @@ export async function seed(req: Request, res: Response): Promise<void> {
   const channelId = req.body["channel_id"] ? Number(req.body["channel_id"]) : undefined;
   const result = await vinhetasService.seed(channelId);
   ok(res, result, `Seed concluído: ${result.created} criadas, ${result.skipped} já existiam`);
+}
+
+export async function sfxSeed(req: Request, res: Response): Promise<void> {
+  const force = req.body["force"] === true;
+  const result = await vinhetasSfxService.seedAllSfx(force);
+  ok(res, result, `SFX seed: ${result.created} gerados, ${result.skipped} reutilizados`);
+}
+
+export async function regenerarTodas(req: Request, res: Response): Promise<void> {
+  const onlyMissingAudio = req.body["only_missing_audio"] === true;
+  const result = await vinhetasService.regenerarTodas(onlyMissingAudio);
+  ok(res, result, `Reprocessamento iniciado em background para ${result.queued} vinheta(s)`);
 }
