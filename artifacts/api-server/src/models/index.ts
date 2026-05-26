@@ -18,6 +18,8 @@ import { PlayHistory, initPlayHistory } from "./PlayHistory.js";
 import { BackgroundTrack, initBackgroundTrack } from "./BackgroundTrack.js";
 import { BackgroundTrackSettings, initBackgroundTrackSettings } from "./BackgroundTrackSettings.js";
 import { MixedAudioCache, initMixedAudioCache } from "./MixedAudioCache.js";
+import { Vinheta, initVinheta } from "./Vinheta.js";
+import { VinhetaExecucao, initVinhetaExecucao } from "./VinhetaExecucao.js";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -40,6 +42,8 @@ initPlayHistory(sequelize);
 initBackgroundTrack(sequelize);
 initBackgroundTrackSettings(sequelize);
 initMixedAudioCache(sequelize);
+initVinheta(sequelize);
+initVinhetaExecucao(sequelize);
 
 Content.belongsTo(Category, { foreignKey: "categoria_id", as: "categoria", onDelete: "SET NULL" });
 Category.hasMany(Content, { foreignKey: "categoria_id", as: "contents" });
@@ -128,13 +132,22 @@ export async function syncDatabase(force = false): Promise<void> {
     syncModel(BackgroundTrack, createOnly),
     syncModel(BackgroundTrackSettings, createOnly),
     syncModel(MixedAudioCache, createOnly),
+    syncModel(Vinheta, createOnly),
+    syncModel(VinhetaExecucao, createOnly),
   ]);
-  logger.info("syncDatabase: background-track tables ensured");
+  logger.info("syncDatabase: new tables ensured (background-tracks + vinhetas)");
 }
 
 // BackgroundTrack FK on Content (optional, no cascade delete — track deletion clears cache manually)
 Content.belongsTo(BackgroundTrack, { foreignKey: "background_track_id", as: "backgroundTrack", onDelete: "SET NULL", constraints: false });
 BackgroundTrack.hasMany(Content, { foreignKey: "background_track_id", as: "contents", constraints: false });
+
+// Vinhetas
+Vinheta.belongsTo(Channel, { foreignKey: "channel_id", as: "channel", onDelete: "CASCADE" });
+Channel.hasMany(Vinheta, { foreignKey: "channel_id", as: "vinhetas" });
+
+VinhetaExecucao.belongsTo(Vinheta, { foreignKey: "vinheta_id", as: "vinheta", onDelete: "CASCADE" });
+Vinheta.hasMany(VinhetaExecucao, { foreignKey: "vinheta_id", as: "execucoes" });
 
 export {
   sequelize,
@@ -144,4 +157,5 @@ export {
   AutomationRule, AutomationLog,
   Programa, GradePrograma, PlayHistory,
   BackgroundTrack, BackgroundTrackSettings, MixedAudioCache,
+  Vinheta, VinhetaExecucao,
 };

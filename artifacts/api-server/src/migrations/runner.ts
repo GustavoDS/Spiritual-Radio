@@ -538,6 +538,77 @@ const migrations = [
     },
     async down({ context: qi }: Ctx) { await qi.dropTable("mixed_audio_cache"); },
   },
+
+  // ── Vinhetas feature ──────────────────────────────────────────────────────
+
+  {
+    name: "22-create-vinhetas",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS vinhetas (
+          id          SERIAL PRIMARY KEY,
+          channel_id  INTEGER REFERENCES channels(id) ON DELETE CASCADE,
+          nome        VARCHAR(255) NOT NULL,
+          texto       TEXT         NOT NULL,
+          audio_url   VARCHAR(500),
+          duracao_sec INTEGER,
+          bloco       VARCHAR(50)  NOT NULL,
+          tipo_vinheta VARCHAR(50) NOT NULL,
+          voice_id    VARCHAR(100),
+          ativo       BOOLEAN      NOT NULL DEFAULT true,
+          prioridade  INTEGER      NOT NULL DEFAULT 0,
+          "createdAt" TIMESTAMPTZ  NOT NULL DEFAULT now(),
+          "updatedAt" TIMESTAMPTZ  NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS vinhetas_channel_bloco_tipo_ativo
+          ON vinhetas (channel_id, bloco, tipo_vinheta, ativo);
+        CREATE INDEX IF NOT EXISTS vinhetas_bloco      ON vinhetas (bloco);
+        CREATE INDEX IF NOT EXISTS vinhetas_tipo       ON vinhetas (tipo_vinheta);
+        CREATE INDEX IF NOT EXISTS vinhetas_ativo      ON vinhetas (ativo);
+
+        COMMENT ON COLUMN vinhetas.bloco IS
+          'madrugada|amanhecer|manha|almoco|tarde|prime|noite|devocional|sleep';
+        COMMENT ON COLUMN vinhetas.tipo_vinheta IS
+          'abertura|transicao|encerramento|antes_de_oracao|antes_de_mensagem|antes_de_versiculo';
+        COMMENT ON COLUMN vinhetas.voice_id IS
+          'External TTS voice ID (e.g. ElevenLabs voice_id). Used to pick a Voice record for synthesis.';
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("vinhetas"); },
+  },
+
+  {
+    name: "23-create-vinheta-execucoes",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS vinheta_execucoes (
+          id           SERIAL PRIMARY KEY,
+          vinheta_id   INTEGER NOT NULL REFERENCES vinhetas(id) ON DELETE CASCADE,
+          channel_id   INTEGER,
+          executada_em TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+        CREATE INDEX IF NOT EXISTS vinheta_execucoes_vinheta_channel_time
+          ON vinheta_execucoes (vinheta_id, channel_id, executada_em);
+      `);
+    },
+    async down({ context: qi }: Ctx) { await qi.dropTable("vinheta_execucoes"); },
+  },
+
+  {
+    name: "24-contents-add-usa-vinheta-automatica",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE contents
+          ADD COLUMN IF NOT EXISTS usa_vinheta_automatica BOOLEAN NOT NULL DEFAULT true;
+
+        COMMENT ON COLUMN contents.usa_vinheta_automatica IS
+          'Se true, vinhetas são injetadas automaticamente antes deste conteúdo (padrão). Use false para músicas ou conteúdos com intro embutida.';
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `ALTER TABLE contents DROP COLUMN IF EXISTS usa_vinheta_automatica;`);
+    },
+  },
 ];
 
 function umzugLog(level: "info" | "warn" | "error" | "debug", m: unknown): void {

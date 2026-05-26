@@ -13,6 +13,7 @@ export class Content extends Model {
   declare tags: string[];
   declare ativo: boolean;
   declare channel_id: number | null;
+  declare usa_vinheta_automatica: boolean;
   declare createdAt: Date;
   declare updatedAt: Date;
 }
@@ -40,6 +41,12 @@ export function initContent(sequelize: Sequelize): void {
       tags: { type: DataTypes.ARRAY(DataTypes.STRING), defaultValue: [], allowNull: false },
       ativo: { type: DataTypes.BOOLEAN, defaultValue: true, allowNull: false },
       channel_id: { type: DataTypes.INTEGER, allowNull: true, references: { model: "channels", key: "id" } },
+      usa_vinheta_automatica: {
+        type: DataTypes.BOOLEAN,
+        allowNull: false,
+        defaultValue: true,
+        comment: "Se true, vinhetas são injetadas automaticamente antes deste conteúdo. Use false para músicas ou conteúdos com intro embutida.",
+      },
     },
     {
       sequelize,

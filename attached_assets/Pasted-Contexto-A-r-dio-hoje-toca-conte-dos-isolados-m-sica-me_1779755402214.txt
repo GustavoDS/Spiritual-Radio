@@ -1,0 +1,130 @@
+Contexto
+A rádio hoje toca conteúdos isolados (música, mensagem, oração, versículo) em sequência, sem transições. Isso faz a programação soar como uma "playlist automática" e não como uma rádio de verdade. Precisamos implementar um sistema de vinhetas dinâmicas por bloco horário que são concatenadas automaticamente antes/depois de certos tipos de conteúdo no momento de tocar.
+
+Objetivo
+Permitir que cada bloco horário (madrugada, amanhecer, manhã, almoço, tarde, prime, noite, devocional, sleep) tenha vinhetas próprias de abertura, transição e encerramento, e que essas vinhetas sejam injetadas automaticamente na fila de reprodução conforme regras por tipo de conteúdo.
+
+1. Modelo de dados
+Nova tabela: vinhetas
+CREATE TABLE vinhetas (
+  id              BIGSERIAL PRIMARY KEY,
+  channel_id      BIGINT REFERENCES channels(id) ON DELETE CASCADE,
+  nome            VARCHAR(255) NOT NULL,
+  texto           TEXT NOT NULL,              -- texto que vai pro TTS
+  audio_url       VARCHAR(500),               -- URL do áudio gerado
+  duracao_sec     INTEGER,
+  bloco           VARCHAR(50) NOT NULL,       -- madrugada|amanhecer|manha|almoco|tarde|prime|noite|devocional|sleep
+  tipo_vinheta    VARCHAR(50) NOT NULL,       -- abertura|transicao|encerramento|antes_de_oracao|antes_de_mensagem|antes_de_versiculo
+  voice_id        VARCHAR(100),               -- voz usada (ElevenLabs)
+  ativo           BOOLEAN DEFAULT true,
+  prioridade      INTEGER DEFAULT 0,          -- pra rotacionar quando há várias
+  created_at      TIMESTAMP DEFAULT NOW(),
+  updated_at      TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_vinhetas_bloco_tipo ON vinhetas(channel_id, bloco, tipo_vinheta, ativo);
+Novo campo em conteudos
+ALTER TABLE conteudos ADD COLUMN usa_vinheta_automatica BOOLEAN DEFAULT true;
+-- false para: música, conteúdo que já tem intro embutida (versículos atuais)
+-- true para: mensagens, orações, reflexões longas
+2. Regras de injeção de vinhetas
+No momento de resolver a fila do dia (ou ao tocar em tempo real), o backend deve aplicar:
+
+Situação	Vinheta injetada
+Primeiro conteúdo de um bloco horário	abertura daquele bloco
+Último conteúdo de um bloco horário	encerramento daquele bloco
+Antes de uma oracao (com usa_vinheta_automatica = true)	antes_de_oracao do bloco atual
+Antes de uma mensagem (com usa_vinheta_automatica = true)	antes_de_mensagem do bloco atual
+Antes de um versiculo (com usa_vinheta_automatica = true)	antes_de_versiculo do bloco atual
+Entre 2 músicas seguidas (a cada 3 músicas)	transicao do bloco atual
+Fallback: se não houver vinheta cadastrada para a combinação bloco + tipo_vinheta, pular (não quebrar a fila). Se houver várias, rotacionar por prioridade + aleatoriedade (anti-repetição últimas N execuções).
+
+3. Endpoints REST
+CRUD básico
+GET    /vinhetas?channel_id=&bloco=&tipo_vinheta=&ativo=
+GET    /vinhetas/:id
+POST   /vinhetas
+PUT    /vinhetas/:id
+DELETE /vinhetas/:id
+Payload POST/PUT:
+
+{
+  "channel_id": 1,
+  "nome": "Abertura Manhã - Bom dia",
+  "texto": "Bom dia! Você está ouvindo a Rádio... uma palavra de fé pra começar seu dia.",
+  "bloco": "manha",
+  "tipo_vinheta": "abertura",
+  "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+  "ativo": true,
+  "prioridade": 10
+}
+Gerar áudio da vinheta (TTS)
+POST /vinhetas/:id/gerar-audio
+Dispara TTS com texto + voice_id, salva URL em audio_url e duração em duracao_sec.
+
+Seed inicial
+POST /vinhetas/seed
+Cria vinhetas padrão para todos os blocos (~3 por tipo por bloco). Sugestão de textos por bloco:
+
+Madrugada (suave): "Na quietude da madrugada, deixe seu coração descansar..."
+Amanhecer (inspiradora): "Um novo dia começa. Que Deus ilumine seus passos..."
+Manhã (acolhedora): "Você está ouvindo a [Rádio]. Uma palavra para o seu dia..."
+Almoço (pausa): "No meio do dia, uma pausa pra alma..."
+Tarde (soft): "A tarde pede calma. Continue com a gente..."
+Prime (forte): "É hora de adorar! Eleve sua voz..."
+Noite (acolhedora): "A noite chega. Que a paz de Deus repouse sobre você..."
+Devocional (profunda): "Momento de intimidade com Deus..."
+Sleep (sussurro): "Descanse. Você está seguro nas mãos do Pai..."
+Resolver com vinhetas (modificar endpoint existente)
+GET /queue?date=&channel_id=
+Deve retornar a fila já com as vinhetas injetadas como itens normais, com flag is_vinheta: true:
+
+{
+  "items": [
+    {
+      "starts_at": "2026-05-26T08:00:00Z",
+      "duration_sec": 15,
+      "tipo": "vinheta",
+      "is_vinheta": true,
+      "vinheta_id": 42,
+      "audio_url": "...",
+      "titulo": "Abertura Manhã"
+    },
+    {
+      "starts_at": "2026-05-26T08:00:15Z",
+      "duration_sec": 240,
+      "tipo": "musica",
+      "is_vinheta": false,
+      "content_id": 101,
+      "audio_url": "...",
+      "titulo": "Oceano de Paz"
+    }
+  ]
+}
+4. Concatenação de áudio (opcional — escolha 1)
+Opção A — Cliente toca em sequência (mais simples): Backend só retorna a fila com vinhetas como itens separados. Player do frontend toca um após o outro. Recomendado pra começar.
+
+Opção B — Backend mixa vinheta + conteúdo num arquivo só: Mais complexo, exige ffmpeg, gera arquivos vinheta+conteudo_xyz.mp3. Só vale se houver problema de gap entre faixas.
+
+5. Anti-repetição
+Manter tabela vinhetas_execucoes (ou usar Redis):
+
+CREATE TABLE vinhetas_execucoes (
+  id BIGSERIAL PRIMARY KEY,
+  vinheta_id BIGINT REFERENCES vinhetas(id),
+  channel_id BIGINT,
+  executada_em TIMESTAMP DEFAULT NOW()
+);
+Ao escolher vinheta: ignorar as últimas N (ex: 3) execuções da mesma combinação bloco + tipo_vinheta.
+
+6. Integração com TTS existente
+Reaproveitar o endpoint /tts/synthesize já existente. Vinheta é só um conteúdo curto (~10-20s) gerado por TTS, salvo no storage de áudio.
+
+7. Checklist de entrega
+ Migration: tabela vinhetas + campo usa_vinheta_automatica em conteudos
+ CRUD /vinhetas (GET list/detail, POST, PUT, DELETE)
+ Endpoint POST /vinhetas/:id/gerar-audio (chama TTS)
+ Endpoint POST /vinhetas/seed (cria ~50 vinhetas padrão)
+ Modificar GET /queue pra injetar vinhetas conforme regras da seção 2
+ Lógica anti-repetição
+ Documentar payloads no OpenAPI/Swagger

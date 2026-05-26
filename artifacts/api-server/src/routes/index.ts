@@ -22,6 +22,7 @@ import programasRouter from "../modules/programas/programas.routes.js";
 import gradeProgramasRouter from "../modules/grade-programas/grade-programas.routes.js";
 import debugRouter from "../modules/debug/debug.routes.js";
 import backgroundTracksRouter from "../modules/background-tracks/background-tracks.routes.js";
+import vinhetasRouter from "../modules/vinhetas/vinhetas.routes.js";
 
 const router: IRouter = Router();
 
@@ -50,5 +51,6 @@ router.use("/programas", programasRouter);
 router.use("/grade-programas", gradeProgramasRouter);
 router.use("/debug", debugRouter);
 router.use("/admin/background-tracks", backgroundTracksRouter);
+router.use("/vinhetas", vinhetasRouter);
 
 export default router;
