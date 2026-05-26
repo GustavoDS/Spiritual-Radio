@@ -194,7 +194,17 @@ function buildFfmpegArgs(assets: MixAssets, bedVolumeDb: number, duckingEnabled:
   let voiceStream = `[${idx("voice")}:a]`;
 
   if (hasBed) {
-    filters.push(`[${idx("bed")}:a]aloop=loop=-1:size=2000000000,volume=${bedVolumeDb}dB[bedloop]`);
+    // silenceremove strips leading silence (<-45 dB) from the bed file before looping,
+    // so the background starts audible at t=0. afade=80ms prevents an audible click
+    // at the new start point. aloop + volume follow unchanged.
+    filters.push(
+      `[${idx("bed")}:a]` +
+      `silenceremove=start_periods=1:start_silence=0:start_threshold=-45dB,` +
+      `afade=t=in:st=0:d=0.08,` +
+      `aloop=loop=-1:size=2000000000,` +
+      `volume=${bedVolumeDb}dB` +
+      `[bedloop]`,
+    );
     if (duckingEnabled) {
       filters.push(`${voiceStream}[bedloop]sidechaincompress=threshold=0.05:ratio=8:attack=5:release=300[bedmixed]`);
     } else {
