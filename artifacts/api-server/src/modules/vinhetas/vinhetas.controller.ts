@@ -48,6 +48,11 @@ export async function seed(req: Request, res: Response): Promise<void> {
   ok(res, result, `Seed concluído: ${result.created} criadas, ${result.skipped} já existiam`);
 }
 
+export async function getSfxStatus(_req: Request, res: Response): Promise<void> {
+  const items = await vinhetasSfxService.listSfxStatus();
+  ok(res, { items });
+}
+
 export async function sfxSeed(req: Request, res: Response): Promise<void> {
   const force = req.body["force"] === true;
   const result = await vinhetasSfxService.seedAllSfx(force);

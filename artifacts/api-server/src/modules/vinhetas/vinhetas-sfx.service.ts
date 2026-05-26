@@ -1,6 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+import { Op } from "sequelize";
 import { storageProvider } from "../../storage/index.js";
+import { Vinheta } from "../../models/index.js";
 import { env } from "../../config/env.js";
 import { logger } from "../../lib/logger.js";
 import type { TipoVinheta } from "../../models/Vinheta.js";
@@ -37,6 +39,20 @@ export interface SfxSeedResult {
   created: number;
   skipped: number;
 }
+
+export interface SfxStatusItem {
+  tipo_vinheta: TipoVinheta;
+  audio_url: string | null;
+  duracao_sec: number | null;
+  prompt: string | null;
+  created_at: null; // not persisted in DB — tracked only in storage
+  reused_count: number;
+}
+
+const TIPOS_ORDER: TipoVinheta[] = [
+  "abertura", "encerramento", "transicao",
+  "antes_de_oracao", "antes_de_mensagem", "antes_de_versiculo",
+];
 
 // ---------------------------------------------------------------------------
 // Service
@@ -111,6 +127,49 @@ export class VinhetasSfxService {
       });
       return { intro_url: null, outro_url: null };
     }
+  }
+
+  /**
+   * List the status of all 6 SFX types.
+   * Always returns 6 items (one per TipoVinheta), with audio_url=null when not yet generated.
+   */
+  async listSfxStatus(): Promise<SfxStatusItem[]> {
+    return Promise.all(
+      TIPOS_ORDER.map(async (tipo): Promise<SfxStatusItem> => {
+        const key = this.sfxKey(tipo);
+        const entry = SFX_CATALOG[tipo];
+
+        let audio_url: string | null = null;
+        try {
+          if (await storageProvider.exists(key)) {
+            audio_url = storageProvider.getUrl(key);
+          }
+        } catch { /* storage unavailable — treat as not generated */ }
+
+        let reused_count = 0;
+        if (audio_url) {
+          try {
+            reused_count = await Vinheta.count({
+              where: {
+                [Op.or]: [
+                  { sfx_intro_url: audio_url },
+                  { sfx_outro_url: audio_url },
+                ],
+              },
+            });
+          } catch { /* non-fatal */ }
+        }
+
+        return {
+          tipo_vinheta: tipo,
+          audio_url,
+          duracao_sec: audio_url ? entry.duration : null,
+          prompt: audio_url ? entry.intro : null,
+          created_at: null,
+          reused_count,
+        };
+      }),
+    );
   }
 
   /**

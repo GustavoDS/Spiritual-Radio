@@ -1,0 +1,72 @@
+Endpoint GET /vinhetas/sfx
+Objetivo
+Expor os SFX stingers gerados pelo seedSfx para que o frontend liste, com preview de áudio, na tela /admin/vinhetas. Hoje os SFX são criados/reutilizados pelo getOrGenerateSfx(tipo) mas não há como inspecioná-los visualmente.
+
+Contrato
+GET /api/vinhetas/sfx
+Auth: mesma autenticação do resto de /api/vinhetas/* (admin).
+
+Query params: nenhum.
+
+Response 200:
+
+{
+  "items": [
+    {
+      "tipo_vinheta": "abertura",
+      "audio_url": "https://.../sfx_abertura_xxx.mp3",
+      "duracao_sec": 2.4,
+      "prompt": "short broadcast intro stinger, warm, uplifting...",
+      "created_at": "2026-05-26T12:34:56.000Z",
+      "reused_count": 12
+    },
+    {
+      "tipo_vinheta": "encerramento",
+      "audio_url": null,
+      "duracao_sec": null,
+      "prompt": null,
+      "created_at": null,
+      "reused_count": 0
+    }
+    // ... 6 itens no total, 1 por tipo (mesmos tipos do enum TipoVinheta)
+  ]
+}
+Regras:
+
+Sempre retorna 6 itens (um por tipo do enum tipo_vinheta): abertura, encerramento, transicao, antes_de_oracao, antes_de_mensagem, antes_de_versiculo.
+Se um tipo ainda não tem SFX gerado → retorna o item com audio_url: null (frontend exibe estado "não gerado").
+reused_count = quantas vinhetas atualmente usam esse SFX (count em vinhetas onde sfx_intro_url = audio_url OR sfx_outro_url = audio_url). Opcional, mas útil pra mostrar utilização.
+prompt é o prompt usado na geração ElevenLabs (se armazenado).
+Ordem: na ordem do enum acima.
+Implementação sugerida
+// vinhetas.controller.ts
+router.get('/sfx', requireAdmin, async (req, res) => {
+  const items = await vinhetasService.listSfxByTipo();
+  res.json({ items });
+});
+
+// vinhetas.service.ts
+const TIPOS: TipoVinheta[] = [
+  'abertura','encerramento','transicao',
+  'antes_de_oracao','antes_de_mensagem','antes_de_versiculo'
+];
+
+async listSfxByTipo() {
+  // assume tabela sfx_assets(tipo_vinheta, audio_url, duracao_sec, prompt, created_at)
+  const rows = await db.sfx_assets.findMany();
+  const byTipo = new Map(rows.map(r => [r.tipo_vinheta, r]));
+  
+  return Promise.all(TIPOS.map(async (tipo) => {
+    const row = byTipo.get(tipo);
+    if (!row) return { tipo_vinheta: tipo, audio_url: null, duracao_sec: null, prompt: null, created_at: null, reused_count: 0 };
+    
+    const reused_count = await db.vinhetas.count({
+      where: { OR: [{ sfx_intro_url: row.audio_url }, { sfx_outro_url: row.audio_url }] }
+    });
+    
+    return { tipo_vinheta: tipo, audio_url: row.audio_url, duracao_sec: row.duracao_sec, prompt: row.prompt, created_at: row.created_at, reused_count };
+  }));
+}
+Smoke test
+curl https://.../api/vinhetas/sfx -H "Authorization: Bearer <token>"
+# espera: { "items": [ {tipo_vinheta: "abertura", ...}, ... 6 itens ] }

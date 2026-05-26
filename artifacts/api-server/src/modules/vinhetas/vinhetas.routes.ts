@@ -2,7 +2,7 @@ import { Router } from "express";
 import { authenticate, requireAdmin } from "../../middlewares/auth.js";
 import {
   getAll, getById, create, update, remove,
-  gerarAudio, seed, sfxSeed, regenerarTodas,
+  gerarAudio, seed, getSfxStatus, sfxSeed, regenerarTodas,
 } from "./vinhetas.controller.js";
 
 /**
@@ -82,6 +82,41 @@ router.post("/", requireAdmin, create);
  *               channel_id: { type: integer, description: "Se omitido, cria vinhetas globais" }
  */
 router.post("/seed", requireAdmin, seed);
+
+/**
+ * @swagger
+ * /api/vinhetas/sfx:
+ *   get:
+ *     tags: [Vinhetas]
+ *     summary: Status dos 6 SFX stingers (um por tipo_vinheta)
+ *     description: >
+ *       Sempre retorna 6 itens na ordem canônica do enum. audio_url=null indica que
+ *       o stinger ainda não foi gerado (rodar POST /sfx/seed para criar).
+ *       reused_count = quantas vinhetas usam esse SFX como sfx_intro_url ou sfx_outro_url.
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     items:
+ *                       type: array
+ *                       items:
+ *                         type: object
+ *                         properties:
+ *                           tipo_vinheta:  { type: string }
+ *                           audio_url:     { type: string, nullable: true }
+ *                           duracao_sec:   { type: number, nullable: true }
+ *                           prompt:        { type: string, nullable: true }
+ *                           created_at:    { type: string, nullable: true }
+ *                           reused_count:  { type: integer }
+ */
+router.get("/sfx", requireAdmin, getSfxStatus);
 
 /**
  * @swagger
