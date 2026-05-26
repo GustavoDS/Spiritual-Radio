@@ -1,0 +1,44 @@
+Ajuste de volume dos stingers SFX
+Contexto
+No pipeline atual do vinhetas.service.ts → gerarAudio(), os stingers SFX (sfx_intro_url e sfx_outro_url) entram no concat em volume nativo (0 dB), o que os deixa proeminentes demais em relação à voz+bed que vem normalizada em -16 LUFS.
+
+Queremos atenuar os stingers em -6 dB antes do concat, para que fiquem como uma "assinatura sonora" presente porém equilibrada com a voz.
+
+Mudança necessária
+No vinhetas.service.ts, dentro do builder do filter_complex do gerarAudio(), aplicar um filtro volume=-6dB em cada input SFX (intro e outro) antes de incluí-los no concat.
+
+Antes (conceitual)
+[sfx_intro][voz_mix][sfx_outro] concat=n=3:v=0:a=1 [out]
+Depois
+[sfx_intro_in]volume=-6dB[intro];
+[sfx_outro_in]volume=-6dB[outro];
+[intro][voz_mix][outro] concat=n=3:v=0:a=1 [out]
+Sugestão de constante
+Para facilitar tuning futuro, extrair como constante no topo do service:
+
+const SFX_STINGER_VOLUME_DB = -6; // volume dos stingers de intro/outro no concat final
+E usar no filter builder:
+
+filterParts.push(`[${introIdx}:a]volume=${SFX_STINGER_VOLUME_DB}dB[intro]`);
+filterParts.push(`[${outroIdx}:a]volume=${SFX_STINGER_VOLUME_DB}dB[outro]`);
+Casos a cobrir no builder dinâmico
+Cenário	Aplicar volume nos SFX?
+Voz apenas (sem intro/outro)	N/A
+Voz + intro apenas	Sim, no intro
+Voz + outro apenas	Sim, no outro
+Voz + intro + outro	Sim, em ambos
+Voz + bed + intro/outro	Sim, em ambos (independe do bed)
+Nenhuma mudança no fluxo de voz/bed/ducking — só os stingers ganham o volume=-6dB.
+
+Não alterar
+loudnorm I=-16 LRA=11 TP=-1.5 final (continua igual — normaliza o resultado todo).
+bed_volume_db da coluna vinhetas (controlado por vinheta no frontend, default agora -12 dB).
+Cache de SFX no R2 (vinhetas/sfx/{tipo}.mp3) — os arquivos continuam gravados em volume nativo; a atenuação é feita no momento da mixagem.
+Critério de aceite
+Vinheta com SFX intro + voz + SFX outro: stingers audíveis mas não "estourando" sobre a voz.
+ffprobe da saída final continua próximo de -16 LUFS integrado.
+Sem regressão nos cenários sem SFX ou sem bed.
+Endpoint POST /api/vinhetas/regenerar-todas reprocessa tudo com o novo volume sem mudanças no contrato.
+Smoke test
+POST /api/vinhetas/regenerar-todas { "only_missing_audio": false }
+# ouvir 1 vinheta de cada tipo — stingers devem soar como "assinatura", não como interrupção

@@ -46,6 +46,9 @@ export interface CreateVinhetaInput {
 const ANTI_REPEAT_N = 3;
 const execFileAsync = promisify(execFile);
 
+/** Volume dos stingers SFX (intro/outro) no concat final. Ajuste aqui para tuning. */
+const SFX_STINGER_VOLUME_DB = -6;
+
 // ---------------------------------------------------------------------------
 // Seed data: 9 blocos × 6 tipos = 54 vinhetas padrão
 // ---------------------------------------------------------------------------
@@ -184,11 +187,18 @@ function buildFfmpegArgs(assets: MixAssets, bedVolumeDb: number, duckingEnabled:
     voiceStream = "[bedded]";
   }
 
-  // Concat: [intro?] [voice/bedded] [outro?]
+  // Attenuate stingers before concat so they sit as "signatures", not bursts
+  // Concat: [intro_vol?] [voice/bedded] [outro_vol?]
   const concatParts: string[] = [];
-  if (hasIntro) concatParts.push(`[${idx("intro")}:a]`);
+  if (hasIntro) {
+    filters.push(`[${idx("intro")}:a]volume=${SFX_STINGER_VOLUME_DB}dB[intro_vol]`);
+    concatParts.push("[intro_vol]");
+  }
   concatParts.push(voiceStream);
-  if (hasOutro) concatParts.push(`[${idx("outro")}:a]`);
+  if (hasOutro) {
+    filters.push(`[${idx("outro")}:a]volume=${SFX_STINGER_VOLUME_DB}dB[outro_vol]`);
+    concatParts.push("[outro_vol]");
+  }
 
   let preNorm: string;
   if (concatParts.length === 1) {
