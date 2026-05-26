@@ -1,0 +1,26 @@
+{"level":"info","message":"VinhetasSfxService: SFX cache hit","timestamp":"2026-05-26T17:23:37.590Z","tipo":"antes_de_oracao","url":"https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/vinhetas/sfx/antes_de_oracao.mp3"}
+{"bedUrl":false,"level":"info","message":"VinhetasService.gerarAudio: step 2/5 — asset resolution","sfxIntroUrl":true,"sfxOutroUrl":false,"timestamp":"2026-05-26T17:23:37.591Z","vinhetaId":28}
+{"level":"info","message":"VinhetasSfxService: SFX cache hit","timestamp":"2026-05-26T17:23:37.799Z","tipo":"encerramento","url":"https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/vinhetas/sfx/encerramento.mp3"}
+{"bedUrl":false,"level":"info","message":"VinhetasService.gerarAudio: step 2/5 — asset resolution","sfxIntroUrl":true,"sfxOutroUrl":false,"timestamp":"2026-05-26T17:23:37.800Z","vinhetaId":27}
+{"hasBed":false,"hasIntro":true,"hasOutro":false,"level":"info","message":"VinhetasService.gerarAudio: step 3/5 — ffmpeg","timestamp":"2026-05-26T17:23:37.915Z","vinhetaId":28}
+{"err":"ffmpeg failed: Error: spawn ffmpeg ENOENT","id":28,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Antes da Oração","timestamp":"2026-05-26T17:23:37.922Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":44,"timestamp":"2026-05-26T17:23:37.929Z","vinhetaId":30,"voiceId":4}
+{"hasBed":false,"hasIntro":true,"hasOutro":false,"level":"info","message":"VinhetasService.gerarAudio: step 3/5 — ffmpeg","timestamp":"2026-05-26T17:23:37.998Z","vinhetaId":27}
+{"err":"ffmpeg failed: Error: spawn ffmpeg ENOENT","id":27,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Encerramento","timestamp":"2026-05-26T17:23:38.001Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":59,"timestamp":"2026-05-26T17:23:38.005Z","vinhetaId":23,"voiceId":4}
+{"level":"info","message":"VinhetasSfxService: SFX cache hit","timestamp":"2026-05-26T17:23:38.685Z","tipo":"transicao","url":"https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/vinhetas/sfx/transicao.mp3"}
+{"bedUrl":false,"level":"info","message":"VinhetasService.gerarAudio: step 2/5 — asset resolution","sfxIntroUrl":true,"sfxOutroUrl":false,"timestamp":"2026-05-26T17:23:38.685Z","vinhetaId":26}
+{"hasBed":false,"hasIntro":true,"hasOutro":false,"level":"info","message":"VinhetasService.gerarAudio: step 3/5 — ffmpeg","timestamp":"2026-05-26T17:23:38.858Z","vinhetaId":26}
+{"err":"ffmpeg failed: Error: spawn ffmpeg ENOENT","id":26,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Transição","timestamp":"2026-05-26T17:23:38.864Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":59,"timestamp":"2026-05-26T17:23:38.870Z","vinhetaId":24,"voiceId":4}
+{"level":"info","message":"VinhetasSfxService: SFX cache hit","timestamp":"2026-05-26T17:23:38.919Z","tipo":"antes_de_versiculo","url":"https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/vinhetas/sfx/antes_de_versiculo.mp3"}
+{"bedUrl":false,"level":"info","message":"VinhetasService.gerarAudio: step 2/5 — asset resolution","sfxIntroUrl":true,"sfxOutroUrl":false,"timestamp":"2026-05-26T17:23:38.919Z","vinhetaId":30}
+{"hasBed":false,"hasIntro":true,"hasOutro":false,"level":"info","message":"VinhetasService.gerarAudio: step 3/5 — ffmpeg","timestamp":"2026-05-26T17:23:39.086Z","vinhetaId":30}
+{"err":"ffmpeg failed: Error: spawn ffmpeg ENOENT","id":30,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Antes do Versículo","timestamp":"2026-05-26T17:23:39.093Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":71,"timestamp":"2026-05-26T17:23:39.124Z","vinhetaId":21,"voiceId":4}
+{"level":"info","message":"VinhetasSfxService: SFX cache hit","timestamp":"2026-05-26T17:23:39.918Z","tipo":"antes_de_versiculo","url":"https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/vinhetas/sfx/antes_de_versiculo.mp3"}
+{"bedUrl":false,"level":"info","message":"VinhetasService.gerarAudio: step 2/5 — asset resolution","sfxIntroUrl":true,"sfxOutroUrl":false,"timestamp":"2026-05-26T17:23:39.918Z","vinhetaId":24}
+{"hasBed":false,"hasIntro":true,"hasOutro":false,"level":"info","message":"VinhetasService.gerarAudio: step 3/5 — ffmpeg","timestamp":"2026-05-26T17:23:40.092Z","vinhetaId":24}
+{"err":"ffmpeg failed: Error: spawn ffmpeg ENOENT","id":24,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Almoço – Antes do Versículo","timestamp":"2026-05-26T17:23:40.105Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":134,"timestamp":"2026-05-26T17:23:40.128Z","vinhetaId":7,"voiceId":4}
+{"level":"info","message":"VinhetasSfxService: SFX cache hit","timestamp":"2026-05-26T17:23:40.295Z","tipo":"encerramento","url":"https://pub-d51a4ecb595449b78c7de7946fac84ef.r2.dev/vinhetas/sfx/encerramento.mp3"}

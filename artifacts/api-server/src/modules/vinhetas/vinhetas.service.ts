@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, execFileSync, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { Op } from "sequelize";
 import { Vinheta, VinhetaExecucao, Voice, BackgroundTrack } from "../../models/index.js";
@@ -48,6 +48,23 @@ const execFileAsync = promisify(execFile);
 
 /** Volume dos stingers SFX (intro/outro) no concat final. Ajuste aqui para tuning. */
 const SFX_STINGER_VOLUME_DB = -6;
+
+// ---------------------------------------------------------------------------
+// Resolve ffmpeg/ffprobe absolute paths at module load time.
+// The Node.js process spawned by the workflow may have a stripped PATH that
+// omits the Nix store, so "ffmpeg" bare name fails with ENOENT even though
+// the binary exists. execSync("which ...") runs inside a login shell that
+// does have the full PATH.
+// ---------------------------------------------------------------------------
+function resolveBin(name: string): string {
+  try {
+    return execSync(`which ${name}`, { encoding: "utf8" }).trim();
+  } catch {
+    return name; // fallback — will surface a clear ENOENT if still missing
+  }
+}
+const FFMPEG_BIN = resolveBin("ffmpeg");
+const FFPROBE_BIN = resolveBin("ffprobe");
 
 // ---------------------------------------------------------------------------
 // Seed data: 9 blocos × 6 tipos = 54 vinhetas padrão
@@ -217,7 +234,7 @@ function buildFfmpegArgs(assets: MixAssets, bedVolumeDb: number, duckingEnabled:
 
 async function runFfmpeg(args: string[]): Promise<void> {
   try {
-    await execFileAsync("ffmpeg", args, { maxBuffer: 100 * 1024 * 1024 });
+    await execFileAsync(FFMPEG_BIN, args, { maxBuffer: 100 * 1024 * 1024 });
   } catch (err) {
     const stderr = ((err as { stderr?: string }).stderr ?? "").slice(0, 800);
     throw new Error(`ffmpeg failed: ${stderr || String(err)}`);
@@ -226,7 +243,7 @@ async function runFfmpeg(args: string[]): Promise<void> {
 
 function probeDuration(filePath: string): number {
   try {
-    const out = execFileSync("ffprobe", [
+    const out = execFileSync(FFPROBE_BIN, [
       "-v", "quiet", "-print_format", "json", "-show_format", filePath,
     ], { encoding: "utf8", maxBuffer: 1024 * 1024 });
     const parsed = JSON.parse(out) as { format?: { duration?: string } };
