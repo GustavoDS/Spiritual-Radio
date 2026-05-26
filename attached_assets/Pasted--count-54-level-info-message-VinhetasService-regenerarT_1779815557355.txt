@@ -1,0 +1,28 @@
+{"count":54,"level":"info","message":"VinhetasService.regenerarTodas: queued","onlyMissingAudio":false,"timestamp":"2026-05-26T17:11:50.456Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":58,"timestamp":"2026-05-26T17:11:50.477Z","vinhetaId":28,"voiceId":4}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":79,"timestamp":"2026-05-26T17:11:50.481Z","vinhetaId":26,"voiceId":4}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":76,"timestamp":"2026-05-26T17:11:50.485Z","vinhetaId":27,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":28,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Antes da Oração","timestamp":"2026-05-26T17:11:50.761Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":44,"timestamp":"2026-05-26T17:11:50.768Z","vinhetaId":30,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":26,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Transição","timestamp":"2026-05-26T17:11:50.777Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":59,"timestamp":"2026-05-26T17:11:50.780Z","vinhetaId":23,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":30,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Antes do Versículo","timestamp":"2026-05-26T17:11:50.943Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":59,"timestamp":"2026-05-26T17:11:50.953Z","vinhetaId":24,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":23,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Almoço – Antes da Mensagem","timestamp":"2026-05-26T17:11:50.969Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":71,"timestamp":"2026-05-26T17:11:50.976Z","vinhetaId":21,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":24,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Almoço – Antes do Versículo","timestamp":"2026-05-26T17:11:51.122Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":134,"timestamp":"2026-05-26T17:11:51.125Z","vinhetaId":7,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":21,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Almoço – Encerramento","timestamp":"2026-05-26T17:11:51.160Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":58,"timestamp":"2026-05-26T17:11:51.172Z","vinhetaId":11,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":11,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Amanhecer – Antes da Mensagem","timestamp":"2026-05-26T17:11:51.354Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":48,"timestamp":"2026-05-26T17:11:51.361Z","vinhetaId":12,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":12,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Amanhecer – Antes do Versículo","timestamp":"2026-05-26T17:11:51.552Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":75,"timestamp":"2026-05-26T17:11:51.557Z","vinhetaId":9,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":27,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Tarde – Encerramento","timestamp":"2026-05-26T17:11:51.596Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":122,"timestamp":"2026-05-26T17:11:51.598Z","vinhetaId":1,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":1,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Madrugada – Abertura","timestamp":"2026-05-26T17:11:51.784Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":75,"timestamp":"2026-05-26T17:11:51.791Z","vinhetaId":4,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":9,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Amanhecer – Encerramento","timestamp":"2026-05-26T17:11:51.802Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":65,"timestamp":"2026-05-26T17:11:51.804Z","vinhetaId":6,"voiceId":4}
+{"err":"Falha na síntese TTS: Status code: 401\nBody: {}","id":6,"level":"warn","message":"regenerarTodas: failed for vinheta","nome":"Madrugada – Antes do Versículo","timestamp":"2026-05-26T17:11:51.992Z"}
+{"level":"info","message":"VinhetasService.gerarAudio: step 1/5 — TTS synthesis","textLen":71,"timestamp":"2026-05-26T17:11:52.001Z","vinhetaId":3,"voiceId":4}
