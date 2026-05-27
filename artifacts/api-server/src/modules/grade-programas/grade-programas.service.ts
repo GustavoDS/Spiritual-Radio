@@ -27,6 +27,42 @@ export interface GradeProgramaFilters {
   limit?: number;
 }
 
+/**
+ * Per-block result returned by `resolveDay()`.
+ * Includes block metadata so callers (e.g. PlaylistMaterializationService)
+ * can loop content to fill the full `duracao_min` window.
+ */
+export interface ResolveDayBlock {
+  grade_id: number;
+  programa_id: number;
+  programa_nome: string;
+  /** programa.bloco — the named time-of-day slot */
+  programa_bloco: string;
+  /** "HH:MM:SS" (server-local = UTC on Replit) */
+  horario_inicio: string;
+  /** ISO UTC: "${date}T${horario_inicio}Z" */
+  horario_inicio_iso: string;
+  /** "HH:MM:SS" — wraps midnight correctly */
+  horario_fim: string;
+  duracao_min: number;
+  /** Total seconds of content resolved (may be < duracao_min*60 if pool is small) */
+  duracao_real_sec: number;
+  items: import("../../services/ResolveService.js").ResolvedItem[];
+}
+
+/** Shape returned by `getPublicDaySchedule()` — what the frontend schedule shows. */
+export interface PublicScheduleItem {
+  id: number;
+  horario_inicio: string;
+  horario_fim: string;
+  /** programa.bloco */
+  tipo: string;
+  /** programa.nome */
+  title: string;
+  description: string | null;
+  duracao_min: number;
+}
+
 /* ─── Time helpers ───────────────────────────────────────────────────────── */
 
 function normaliseTime(t: string): string {
@@ -250,11 +286,17 @@ export class GradeProgramasService {
     });
   }
 
-  /* ── Resolve entire day ─────────────────────────────────────────────── */
-  async resolveDay(channelId: number, date: string) {
-    const weekday = new Date(date).getDay();
+  /* ── Private: merge + sort effective blocks for a day ───────────────── */
 
-    // Load effective grade for the day: exceptions override recurring
+  /**
+   * Returns the ordered, de-duplicated list of active GradePrograma entries
+   * for `channelId` on `date`. Exception entries (data = date) take priority
+   * over recurring (data = null). Uses UTC day-of-week to avoid TZ drift.
+   */
+  private async _getEffectiveBlocks(channelId: number, date: string): Promise<GradePrograma[]> {
+    // Parse date as UTC to avoid local-timezone weekday drift (e.g. UTC-3 server)
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+
     const exceptions = await GradePrograma.findAll({
       where: { channel_id: channelId, data: date, ativo: true },
       include: [{ model: Programa, as: "programa" }],
@@ -272,7 +314,6 @@ export class GradeProgramasService {
       order: [["horario_inicio", "ASC"], ["prioridade", "DESC"]],
     });
 
-    // Merge: exceptions occupy slots; recurring fill gaps
     const effective: GradePrograma[] = [...exceptions];
     for (const r of recurring) {
       const prog = (r as GradePrograma & { programa: Programa }).programa;
@@ -286,26 +327,80 @@ export class GradeProgramasService {
     }
 
     effective.sort((a, b) => normaliseTime(a.horario_inicio).localeCompare(normaliseTime(b.horario_inicio)));
+    return effective;
+  }
 
-    // Resolve each block
+  /* ── Resolve entire day ─────────────────────────────────────────────── */
+
+  /**
+   * Resolves all program blocks for a channel/date.
+   * Returns both a flat `items` list (backward-compat) and a `blocks` array
+   * with per-block metadata (duracao_min, horario_inicio_iso, duracao_real_sec,
+   * items) needed by PlaylistMaterializationService to loop content.
+   */
+  async resolveDay(channelId: number, date: string) {
+    const effective = await this._getEffectiveBlocks(channelId, date);
+
     const allItems: unknown[] = [];
+    const blockResults: ResolveDayBlock[] = [];
+
     for (const block of effective) {
       const prog = (block as GradePrograma & { programa: Programa }).programa;
       const startsAt = `${date}T${normaliseTime(block.horario_inicio)}Z`;
-      const resolved = await resolveService.resolve(
-        prog.id,
-        channelId,
-        date,
-        startsAt,
-      );
+      const resolved = await resolveService.resolve(prog.id, channelId, date, startsAt);
+
       allItems.push(...resolved.items.map((item) => ({
         ...item,
         grade_id: block.id,
         programa_nome: prog.nome,
       })));
+
+      blockResults.push({
+        grade_id: block.id,
+        programa_id: prog.id,
+        programa_nome: prog.nome,
+        programa_bloco: prog.bloco,
+        horario_inicio: normaliseTime(block.horario_inicio),
+        horario_inicio_iso: startsAt,
+        horario_fim: addMinutesToTime(normaliseTime(block.horario_inicio), prog.duracao_min),
+        duracao_min: prog.duracao_min,
+        duracao_real_sec: resolved.duracao_real_sec,
+        items: resolved.items,
+      });
     }
 
-    return { date, channel_id: channelId, total_blocks: effective.length, items: allItems };
+    return {
+      date,
+      channel_id: channelId,
+      total_blocks: effective.length,
+      blocks: blockResults,
+      items: allItems,
+    };
+  }
+
+  /* ── Public schedule (for front-end display) ─────────────────────────── */
+
+  /**
+   * Returns the effective day schedule for a channel in the public format
+   * expected by the frontend: real program names, bloco as tipo, horario_fim.
+   * Uses grade_programas + programas — replaces the legacy schedules table.
+   */
+  async getPublicDaySchedule(channelId: number, date: string): Promise<PublicScheduleItem[]> {
+    const effective = await this._getEffectiveBlocks(channelId, date);
+    return effective.map((block) => {
+      const prog = (block as GradePrograma & { programa: Programa }).programa;
+      const inicio = normaliseTime(block.horario_inicio);
+      const fim = addMinutesToTime(inicio, prog.duracao_min);
+      return {
+        id: block.id,
+        horario_inicio: inicio,
+        horario_fim: fim,
+        tipo: prog.bloco,
+        title: prog.nome,
+        description: prog.descricao ?? null,
+        duracao_min: prog.duracao_min,
+      };
+    });
   }
 }
 
