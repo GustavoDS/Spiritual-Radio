@@ -1,5 +1,5 @@
 import { Op } from "sequelize";
-import { Content, Schedule, Channel } from "../models/index.js";
+import { Content, Schedule, Channel, ContentChannel } from "../models/index.js";
 import { scheduleService } from "./ScheduleService.js";
 import { playlistService } from "./PlaylistService.js";
 import { logger } from "../lib/logger.js";
@@ -52,8 +52,17 @@ export class RadioService {
 
     let current: Content | null = null;
     if (schedule) {
+      // Use the N:N junction — content that belongs to this channel
       current = await Content.findOne({
-        where: { channel_id: schedule.channel_id, ativo: true },
+        where: { ativo: true },
+        include: [{
+          model: Channel,
+          as: "channels",
+          where: { id: schedule.channel_id },
+          required: true,
+          through: { attributes: [] },
+          attributes: [],
+        }],
         order: [["createdAt", "DESC"]],
       });
     }

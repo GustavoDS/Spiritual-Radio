@@ -104,3 +104,15 @@ export async function remove(req: Request, res: Response): Promise<void> {
   await contentsService.remove(Number(req.params["id"]));
   noContent(res);
 }
+
+export async function bulkAssignChannels(req: Request, res: Response): Promise<void> {
+  const body = req.body as { content_ids: number[]; channel_ids: number[]; mode: "add" | "replace" | "remove" };
+  if (!Array.isArray(body.content_ids) || !Array.isArray(body.channel_ids)) {
+    throw new Error("content_ids e channel_ids devem ser arrays");
+  }
+  if (!["add", "replace", "remove"].includes(body.mode)) {
+    throw new Error("mode deve ser add | replace | remove");
+  }
+  const result = await contentsService.bulkAssignChannels(body.content_ids, body.channel_ids, body.mode);
+  ok(res, result, `bulk-assign-channels (${body.mode}): ${result.updated} conteúdos processados`);
+}

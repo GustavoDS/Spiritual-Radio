@@ -20,6 +20,8 @@ import { BackgroundTrackSettings, initBackgroundTrackSettings } from "./Backgrou
 import { MixedAudioCache, initMixedAudioCache } from "./MixedAudioCache.js";
 import { Vinheta, initVinheta } from "./Vinheta.js";
 import { VinhetaExecucao, initVinhetaExecucao } from "./VinhetaExecucao.js";
+import { ContentChannel, initContentChannel } from "./ContentChannel.js";
+import { VinhetaChannel, initVinhetaChannel } from "./VinhetaChannel.js";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -44,6 +46,8 @@ initBackgroundTrackSettings(sequelize);
 initMixedAudioCache(sequelize);
 initVinheta(sequelize);
 initVinhetaExecucao(sequelize);
+initContentChannel(sequelize);
+initVinhetaChannel(sequelize);
 
 Content.belongsTo(Category, { foreignKey: "categoria_id", as: "categoria", onDelete: "SET NULL" });
 Category.hasMany(Content, { foreignKey: "categoria_id", as: "contents" });
@@ -142,9 +146,17 @@ export async function syncDatabase(force = false): Promise<void> {
 Content.belongsTo(BackgroundTrack, { foreignKey: "background_track_id", as: "backgroundTrack", onDelete: "SET NULL", constraints: false });
 BackgroundTrack.hasMany(Content, { foreignKey: "background_track_id", as: "contents", constraints: false });
 
-// Vinhetas
+// Vinhetas (legacy 1:N kept for compat)
 Vinheta.belongsTo(Channel, { foreignKey: "channel_id", as: "channel", onDelete: "CASCADE" });
 Channel.hasMany(Vinheta, { foreignKey: "channel_id", as: "vinhetas" });
+
+// Content ↔ Channel  N:N
+Content.belongsToMany(Channel, { through: ContentChannel, as: "channels", foreignKey: "content_id", otherKey: "channel_id" });
+Channel.belongsToMany(Content, { through: ContentChannel, as: "channelContents", foreignKey: "channel_id", otherKey: "content_id" });
+
+// Vinheta ↔ Channel  N:N
+Vinheta.belongsToMany(Channel, { through: VinhetaChannel, as: "channels", foreignKey: "vinheta_id", otherKey: "channel_id" });
+Channel.belongsToMany(Vinheta, { through: VinhetaChannel, as: "channelVinhetas", foreignKey: "channel_id", otherKey: "vinheta_id" });
 
 VinhetaExecucao.belongsTo(Vinheta, { foreignKey: "vinheta_id", as: "vinheta", onDelete: "CASCADE" });
 Vinheta.hasMany(VinhetaExecucao, { foreignKey: "vinheta_id", as: "execucoes" });
@@ -158,6 +170,7 @@ export {
   User, Channel, Category, Content, Voice,
   Schedule, Playlist, PlaylistItem,
   ContactMessage, RadioPlay, AiEvent,
+  ContentChannel, VinhetaChannel,
   AutomationRule, AutomationLog,
   Programa, GradePrograma, PlayHistory,
   BackgroundTrack, BackgroundTrackSettings, MixedAudioCache,

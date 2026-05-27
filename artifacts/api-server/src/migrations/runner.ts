@@ -633,6 +633,47 @@ const migrations = [
   },
 
   {
+    name: "27-create-content-vinheta-channels-junction",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS content_channels (
+          content_id  INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+          channel_id  INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (content_id, channel_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_content_channels_channel ON content_channels (channel_id);
+
+        CREATE TABLE IF NOT EXISTS vinheta_channels (
+          vinheta_id  INTEGER NOT NULL REFERENCES vinhetas(id)  ON DELETE CASCADE,
+          channel_id  INTEGER NOT NULL REFERENCES channels(id)  ON DELETE CASCADE,
+          created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+          PRIMARY KEY (vinheta_id, channel_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_vinheta_channels_channel ON vinheta_channels (channel_id);
+
+        -- Backfill from existing channel_id columns
+        INSERT INTO content_channels (content_id, channel_id)
+          SELECT id, channel_id FROM contents WHERE channel_id IS NOT NULL
+          ON CONFLICT DO NOTHING;
+
+        INSERT INTO vinheta_channels (vinheta_id, channel_id)
+          SELECT id, channel_id FROM vinhetas WHERE channel_id IS NOT NULL
+          ON CONFLICT DO NOTHING;
+
+        COMMENT ON TABLE content_channels IS 'N:N join between contents and channels. channel_id on contents is kept for legacy compat.';
+        COMMENT ON TABLE vinheta_channels IS 'N:N join between vinhetas and channels. channel_id on vinhetas is kept for legacy compat.';
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        DROP TABLE IF EXISTS vinheta_channels;
+        DROP TABLE IF EXISTS content_channels;
+      `);
+    },
+  },
+
+  {
     name: "26-background-tracks-add-versiculo-category",
     // ALTER TYPE … ADD VALUE cannot run inside a transaction in Postgres.
     // We call raw SQL with transaction: null to bypass Umzug's default transaction.

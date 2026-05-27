@@ -1,2 +1,3 @@
 - [Vinhetas ffmpeg pipeline](vinhetas-ffmpeg-pipeline.md) — gerarAudio usa síntese TTS direto (buffer), não runSynthesis, para evitar que R2.upload apague o arquivo local antes do ffmpeg ler.
 - [LocalStorageProvider upload quirk](local-storage-upload.md) — upload() é no-op (retorna URL do localPath); para SFX/finais funcionarem com exists(), escrever em env.uploadDir/key antes de chamar upload.
+- [N:N junction tables contents/vinhetas↔channels](nn-junction.md) — content_channels + vinheta_channels são fonte verdade; channel_id legado mantido; migration 27 faz backfill; bulkAssignChannels usa bulkCreate/destroy direto.

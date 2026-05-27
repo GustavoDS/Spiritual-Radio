@@ -1,0 +1,90 @@
+Contexto
+Atualmente contents e vinhetas têm uma coluna única channel_id (FK para channels). Isso impede que um mesmo conteúdo/vinheta seja usado em mais de um canal, e itens com channel_id = NULL ficam invisíveis a qualquer canal (a query é WHERE channel_id = :id estrita).
+
+Objetivo
+Migrar para relação N:N entre contents ↔ channels e vinhetas ↔ channels. Regra de negócio: conteúdo/vinheta sem nenhum canal associado NÃO entra na programação (fica "arquivado").
+
+Tarefas
+1. Migration (Postgres)
+-- Tabelas de junção
+CREATE TABLE content_channels (
+  content_id INTEGER NOT NULL REFERENCES contents(id) ON DELETE CASCADE,
+  channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (content_id, channel_id)
+);
+CREATE INDEX idx_content_channels_channel ON content_channels(channel_id);
+
+CREATE TABLE vinheta_channels (
+  vinheta_id INTEGER NOT NULL REFERENCES vinhetas(id) ON DELETE CASCADE,
+  channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (vinheta_id, channel_id)
+);
+CREATE INDEX idx_vinheta_channels_channel ON vinheta_channels(channel_id);
+
+-- Backfill: migrar channel_id atual para as junções
+INSERT INTO content_channels (content_id, channel_id)
+SELECT id, channel_id FROM contents WHERE channel_id IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+INSERT INTO vinheta_channels (vinheta_id, channel_id)
+SELECT id, channel_id FROM vinhetas WHERE channel_id IS NOT NULL
+ON CONFLICT DO NOTHING;
+
+-- Manter a coluna channel_id por compatibilidade temporária (pode remover em release futura)
+-- ALTER TABLE contents DROP COLUMN channel_id;
+-- ALTER TABLE vinhetas DROP COLUMN channel_id;
+2. Endpoints — Contents
+Alterar GET /contents:
+
+Quando ?channel_id=X for passado: JOIN content_channels cc ON cc.content_id = contents.id WHERE cc.channel_id = X.
+Sem filtro: retorna tudo (como hoje), mas incluir array channel_ids: number[] no payload de cada item.
+Resposta de cada conteúdo (acrescentar campo):
+
+{ "id": 1, "titulo": "...", "channel_ids": [1, 3, 5], ... }
+(pode manter channel_id legado apontando para o primeiro, ou remover)
+
+Alterar POST /contents e PUT /contents/:id:
+
+Aceitar channel_ids: number[] no body (array). Substitui o set completo na junção.
+Manter aceitação de channel_id único por compat (converter pra [channel_id]).
+Permitir array vazio = item "arquivado" (sem canal).
+Novo endpoint bulk:
+
+POST /contents/bulk-assign-channels
+Body: {
+  content_ids: number[],
+  channel_ids: number[],
+  mode: "add" | "replace" | "remove"
+}
+Response: { updated: number }
+add: insere as combinações que não existem (ON CONFLICT DO NOTHING).
+replace: apaga associações existentes desses content_ids e insere as novas.
+remove: apaga as combinações listadas.
+3. Endpoints — Vinhetas
+Mesma estrutura, espelhada:
+
+GET /vinhetas?channel_id=X faz JOIN em vinheta_channels.
+Resposta inclui channel_ids: number[].
+POST/PUT /vinhetas aceita channel_ids.
+POST /vinhetas/bulk-assign-channels com mesmo contrato (vinheta_ids no lugar de content_ids).
+4. Resolver de programação
+Onde a programação monta a fila por canal, garantir que a query use o JOIN nas tabelas de junção. Itens sem nenhuma linha em content_channels / vinheta_channels não devem aparecer para nenhum canal.
+
+5. Validação
+channel_ids opcional na criação (permitido criar "arquivado").
+Validar que cada channel_id existe (FK já garante, mas retornar 400 amigável).
+No bulk, limitar tamanho de arrays (ex.: máx 500 ids por chamada).
+6. Documentação
+Atualizar OpenAPI/Swagger:
+
+Novo campo channel_ids: integer[] em Content e Vinheta.
+Novos endpoints bulk.
+Marcar channel_id (singular) como deprecated.
+Critérios de aceite
+ GET /contents?channel_id=1 retorna conteúdos onde 1 está em channel_ids.
+ PUT /contents/10 com { channel_ids: [1,2] } faz o item aparecer em ambos os canais.
+ POST /contents/bulk-assign-channels com mode:"add" para 50 ids × 3 canais cria 150 linhas em content_channels (ou menos se já existirem).
+ Conteúdo com channel_ids: [] não aparece em nenhum GET /contents?channel_id=X nem na programação.
+ Mesmos critérios para /vinhetas.

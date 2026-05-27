@@ -3,7 +3,7 @@ import path from "node:path";
 import { execFile, execFileSync, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { Op } from "sequelize";
-import { Vinheta, VinhetaExecucao, Voice, BackgroundTrack } from "../../models/index.js";
+import { Vinheta, VinhetaExecucao, Voice, BackgroundTrack, Channel, VinhetaChannel } from "../../models/index.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
 import { storageProvider } from "../../storage/index.js";
 import { synthesizeElevenLabs } from "../../services/tts/elevenlabsTts.js";
@@ -319,7 +319,6 @@ export class VinhetasService {
 
   async findAll(filters: VinhetaFilters = {}) {
     const where: Record<string, unknown> = {};
-    if (filters.channel_id !== undefined) where["channel_id"] = filters.channel_id;
     if (filters.bloco) where["bloco"] = filters.bloco;
     if (filters.tipo_vinheta) where["tipo_vinheta"] = filters.tipo_vinheta;
     if (filters.ativo !== undefined) where["ativo"] = filters.ativo;
@@ -328,13 +327,33 @@ export class VinhetasService {
     const limit = Math.min(100, filters.limit ?? 50);
     const offset = (page - 1) * limit;
 
+    const channelsInclude = {
+      model: Channel,
+      as: "channels",
+      through: { attributes: [] },
+      attributes: ["id", "nome"],
+      ...(filters.channel_id !== undefined
+        ? { where: { id: filters.channel_id }, required: true }
+        : { required: false }),
+    };
+
     const { count, rows } = await Vinheta.findAndCountAll({
       where,
+      include: [channelsInclude],
       order: [["bloco", "ASC"], ["tipo_vinheta", "ASC"], ["prioridade", "DESC"], ["id", "ASC"]],
       limit,
       offset,
+      distinct: true,
     });
-    return { items: rows, total: count, page, limit, totalPages: Math.ceil(count / limit) };
+
+    const items = rows.map(row => {
+      const plain = row.toJSON() as Record<string, unknown>;
+      const channels = plain.channels as Array<{ id: number }> | undefined;
+      plain.channel_ids = channels?.map(c => c.id) ?? [];
+      return plain;
+    });
+
+    return { items, total: count, page, limit, totalPages: Math.ceil(count / limit) };
   }
 
   async findById(id: number): Promise<Vinheta> {
@@ -343,13 +362,36 @@ export class VinhetasService {
     return v;
   }
 
-  async create(data: CreateVinhetaInput): Promise<Vinheta> {
-    return Vinheta.create(data as unknown as Parameters<typeof Vinheta.create>[0]);
+  async create(data: CreateVinhetaInput & { channel_ids?: number[] }): Promise<Vinheta> {
+    const { channel_ids, ...rest } = data as CreateVinhetaInput & { channel_ids?: number[] };
+    const channelIds = channel_ids ?? (rest.channel_id !== undefined && rest.channel_id !== null ? [rest.channel_id] : undefined);
+    const legacyChannelId = channelIds?.[0] ?? rest.channel_id ?? null;
+
+    const v = await Vinheta.create({ ...rest, channel_id: legacyChannelId } as unknown as Parameters<typeof Vinheta.create>[0]);
+    if (channelIds && channelIds.length > 0) {
+      await VinhetaChannel.bulkCreate(
+        channelIds.map(cid => ({ vinheta_id: v.id, channel_id: cid })),
+        { ignoreDuplicates: true },
+      );
+    }
+    return v;
   }
 
-  async update(id: number, data: Partial<CreateVinhetaInput>): Promise<Vinheta> {
+  async update(id: number, data: Partial<CreateVinhetaInput> & { channel_ids?: number[] }): Promise<Vinheta> {
+    const { channel_ids, ...rest } = data;
     const v = await this.findById(id);
-    await v.update(data);
+    const channelIds = channel_ids ?? (rest.channel_id !== undefined ? [rest.channel_id as number] : undefined);
+    const legacyChannelId = channelIds !== undefined ? (channelIds[0] ?? null) : undefined;
+    await v.update({ ...rest, ...(legacyChannelId !== undefined ? { channel_id: legacyChannelId } : {}) });
+    if (channelIds !== undefined) {
+      await VinhetaChannel.destroy({ where: { vinheta_id: id } });
+      if (channelIds.length > 0) {
+        await VinhetaChannel.bulkCreate(
+          channelIds.map(cid => ({ vinheta_id: id, channel_id: cid })),
+          { ignoreDuplicates: true },
+        );
+      }
+    }
     return v;
   }
 
@@ -548,7 +590,7 @@ export class VinhetasService {
         order: [["createdAt", "ASC"]],
       });
 
-      await Vinheta.create({
+      const newV = await Vinheta.create({
         ...item,
         channel_id: channelId ?? null,
         ativo: true,
@@ -559,6 +601,13 @@ export class VinhetasService {
         bed_volume_db: -20,
         ducking_enabled: true,
       } as unknown as Parameters<typeof Vinheta.create>[0]);
+      // Sync junction table for the new vinheta
+      if (channelId !== undefined) {
+        await VinhetaChannel.bulkCreate(
+          [{ vinheta_id: newV.id, channel_id: channelId }],
+          { ignoreDuplicates: true },
+        );
+      }
       created++;
     }
 
@@ -573,6 +622,37 @@ export class VinhetasService {
    * Runs in the background (fire-and-forget) with max 3 parallel workers.
    * Returns immediately with the count of queued items.
    */
+  async bulkAssignChannels(
+    vinhetaIds: number[],
+    channelIds: number[],
+    mode: "add" | "replace" | "remove",
+  ): Promise<{ updated: number }> {
+    if (vinhetaIds.length > 500 || channelIds.length > 500) {
+      throw new HttpError("Máximo de 500 ids por chamada", 400);
+    }
+    if (vinhetaIds.length === 0) return { updated: 0 };
+
+    if (mode === "add") {
+      await VinhetaChannel.bulkCreate(
+        vinhetaIds.flatMap(vid => channelIds.map(cid => ({ vinheta_id: vid, channel_id: cid }))),
+        { ignoreDuplicates: true },
+      );
+    } else if (mode === "replace") {
+      await VinhetaChannel.destroy({ where: { vinheta_id: vinhetaIds } });
+      if (channelIds.length > 0) {
+        await VinhetaChannel.bulkCreate(
+          vinhetaIds.flatMap(vid => channelIds.map(cid => ({ vinheta_id: vid, channel_id: cid }))),
+          { ignoreDuplicates: true },
+        );
+      }
+    } else if (mode === "remove") {
+      await VinhetaChannel.destroy({
+        where: { vinheta_id: vinhetaIds, channel_id: channelIds },
+      });
+    }
+    return { updated: vinhetaIds.length };
+  }
+
   async regenerarTodas(onlyMissingAudio: boolean): Promise<{ queued: number }> {
     const where = onlyMissingAudio
       ? { ativo: true, audio_url: null }

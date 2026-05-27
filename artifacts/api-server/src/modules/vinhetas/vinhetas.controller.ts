@@ -64,3 +64,15 @@ export async function regenerarTodas(req: Request, res: Response): Promise<void>
   const result = await vinhetasService.regenerarTodas(onlyMissingAudio);
   ok(res, result, `Reprocessamento iniciado em background para ${result.queued} vinheta(s)`);
 }
+
+export async function bulkAssignChannels(req: Request, res: Response): Promise<void> {
+  const body = req.body as { vinheta_ids: number[]; channel_ids: number[]; mode: "add" | "replace" | "remove" };
+  if (!Array.isArray(body.vinheta_ids) || !Array.isArray(body.channel_ids)) {
+    throw new Error("vinheta_ids e channel_ids devem ser arrays");
+  }
+  if (!["add", "replace", "remove"].includes(body.mode)) {
+    throw new Error("mode deve ser add | replace | remove");
+  }
+  const result = await vinhetasService.bulkAssignChannels(body.vinheta_ids, body.channel_ids, body.mode);
+  ok(res, result, `bulk-assign-channels (${body.mode}): ${result.updated} vinhetas processadas`);
+}

@@ -2,7 +2,7 @@ import { Router } from "express";
 import { authenticate, requireAdmin } from "../../middlewares/auth.js";
 import {
   getAll, getById, create, update, remove,
-  gerarAudio, seed, getSfxStatus, sfxSeed, regenerarTodas,
+  gerarAudio, seed, getSfxStatus, sfxSeed, regenerarTodas, bulkAssignChannels,
 } from "./vinhetas.controller.js";
 
 /**
@@ -196,6 +196,42 @@ router.post("/sfx/seed", requireAdmin, sfxSeed);
  *                     queued: { type: integer }
  */
 router.post("/regenerar-todas", requireAdmin, regenerarTodas);
+
+/**
+ * @swagger
+ * /api/vinhetas/bulk-assign-channels:
+ *   post:
+ *     tags: [Vinhetas]
+ *     summary: Associar/desassociar vinhetas a canais em lote (N:N)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [vinheta_ids, channel_ids, mode]
+ *             properties:
+ *               vinheta_ids: { type: array, items: { type: integer }, maxItems: 500 }
+ *               channel_ids: { type: array, items: { type: integer }, maxItems: 500 }
+ *               mode:
+ *                 type: string
+ *                 enum: [add, replace, remove]
+ *                 description: "add=adiciona, replace=substitui tudo, remove=remove os informados"
+ *     responses:
+ *       200:
+ *         description: Resultado da operação
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     updated: { type: integer }
+ */
+router.post("/bulk-assign-channels", requireAdmin, bulkAssignChannels);
 
 // ── Item ─────────────────────────────────────────────────────────────────────
 
