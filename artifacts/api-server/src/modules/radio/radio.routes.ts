@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { authenticate } from "../../middlewares/auth.js";
-import { getCurrent, getNext, getSchedule, getQueue } from "./radio.controller.js";
+import { authenticate, requireAdmin } from "../../middlewares/auth.js";
+import { getCurrent, getNext, getSchedule, getQueue, regenerate } from "./radio.controller.js";
 
 /**
  * @swagger
@@ -61,5 +61,35 @@ router.get("/schedule", getSchedule);
  *                           titulo:       { type: string }
  */
 router.get("/queue", getQueue);
+
+/**
+ * @swagger
+ * /api/radio/regenerate:
+ *   post:
+ *     tags: [Rádio]
+ *     summary: Força rematerialização da playlist do dia (admin)
+ *     description: >
+ *       Resolve todos os blocos da grade de programas para o canal/data informados,
+ *       cria/atualiza os registros em `playlists` + `playlist_items` e recarrega
+ *       o estado do AutoDJ. Se channel_id for omitido, processa todos os canais ativos.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               channel_id:
+ *                 type: integer
+ *                 description: "ID do canal (omitir para regenerar todos os canais ativos)"
+ *               date:
+ *                 type: string
+ *                 example: "2026-05-27"
+ *                 description: "Data YYYY-MM-DD (padrão: hoje)"
+ *     responses:
+ *       200:
+ *         description: Resultado da regeneração
+ */
+router.post("/regenerate", requireAdmin, regenerate);
 
 export default router;

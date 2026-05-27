@@ -108,7 +108,15 @@ export class RadioService {
     if (!nextSchedule) return null;
 
     const content = await Content.findOne({
-      where: { channel_id: nextSchedule.channel_id, ativo: true, createdAt: { [Op.lte]: now } },
+      where: { ativo: true, createdAt: { [Op.lte]: now } },
+      include: [{
+        model: Channel,
+        as: "channels",
+        where: { id: nextSchedule.channel_id },
+        required: true,
+        through: { attributes: [] },
+        attributes: [],
+      }],
       order: [["createdAt", "DESC"]],
     });
 

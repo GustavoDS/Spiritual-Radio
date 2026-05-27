@@ -1,0 +1,33 @@
+Contexto
+
+Frontend chamando POST /api/programas/:id/resolve com { date, channel_id: 1 } válido.
+Banco está OK:
+channels tem o canal id=1 ("Voz para o Povo").
+content_channels (junction N:N) tem vínculos de musica, oracao, versiculo, mensagem, reflexao, vinheta para channel_id=1 (confirmado via GET /api/contents?channel_id=1 — todos os itens retornam channels:[{id:1,...}]).
+8 programas ativos (ids 9–16) e 8 slots em grade_programas cobrindo 00:00 → 22:00 com channel_id=1.
+Sintomas atuais
+
+POST /programas/10/resolve retorna 200 com 95 itens, mas todos com content: null — só vêm starts_at, duration_sec, tipo.
+O campo total_duration_sec não vem na resposta (frontend renderiza NaN:NaN).
+/api/radio/now-playing?channel_id=1 retorna isPlaying:false (rádio fora do ar) — provavelmente pela mesma causa.
+Não parece haver job/worker rodando para materializar a fila do dia — sem isso o now-playing não tem o que tocar.
+Hipóteses prováveis (ordem de probabilidade)
+
+ResolveService não filtra por tipo após a refatoração N:N. A query Content.findAll({ include: [{ model: Channel, as: "channels", where: { id: channelId }, required: true }] }) provavelmente perdeu o where: { tipo, ativo: true } no nível do Content. Resultado: ou retorna todos e a função de matching falha por mismatch de tipo, ou usa um pool errado por slot.
+Case-sensitivity do tipo. Banco grava "oracao"/"versiculo"/"mensagem" em lower-case (visto via API). Se o serviço compara com "Oracao" ou usa enum case-different, nada bate.
+total_duration_sec deixou de ser retornado no DTO final do ResolveService.resolve(). Adicionar:
+return { programa, items, total_duration_sec: items.reduce((s, i) => s + (i.duration_sec ?? 0), 0) };
+Falta um worker/scheduler que materialize a fila. Os endpoints /resolve retornam um "preview" sob demanda, mas o RadioService.getNowPlaying parece depender de uma tabela de fila já preenchida (ex: radio_queue / now_playing). Se nenhum job roda periodicamente para chamar resolveDay por canal e gravar a fila, a rádio fica permanentemente fora do ar. Precisamos de um dos dois:
+a) Um worker (BullMQ / node-cron / pg_cron) que rode a cada X minutos, chame ResolveService.resolveDay({ date: today, channel_id }) para cada canal ativo e persista os items na tabela de fila; ou
+b) RadioService.getNowPlaying calcular on-the-fly via ResolveService (resolvendo o slot atual da grade) — funciona se o resolve estiver rápido.
+O que pedimos para investigar / corrigir
+
+Logar a query SQL real que o ResolveService está gerando para um slot do tipo oracao e mostrar o resultado. Confirmar se o where: { tipo: 'oracao', ativo: true } ainda está no Content.findAll.
+Adicionar total_duration_sec no payload de /programas/:id/resolve.
+Confirmar se existe um worker/cron que materializa a fila do dia. Se não existir, definir a estratégia (worker periódico vs resolve on-demand no now-playing) e implementar. Sugestão: cron a cada 15 min que regrava o restante do dia para todos os canais ativos.
+Endpoint manual de "gerar fila agora" (POST /api/radio/regenerate?channel_id=1&date=YYYY-MM-DD) para podermos forçar materialização pela UI enquanto debugamos.
+Retornar no /now-playing um campo offlineReason explícito (no_queue / queue_exhausted / no_schedule / between_blocks) para o admin diagnosticar sem ler log.
+Validação esperada após o fix
+
+POST /programas/10/resolve { date: hoje, channel_id: 1 } → 95 items com content.audio_url preenchido na maioria, e total_duration_sec ≈ 10800.
+GET /radio/now-playing?channel_id=1 → isPlaying: true com um item da grade do horário atual.

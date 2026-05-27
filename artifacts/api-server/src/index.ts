@@ -11,6 +11,7 @@ import { startCleanupWorker } from "./jobs/cleanupJob.js";
 import { startAutomationWorker } from "./jobs/automationJob.js";
 import { automationService } from "./services/AutomationService.js";
 import { autoDjService } from "./services/AutoDJService.js";
+import { playlistMaterializationService } from "./services/PlaylistMaterializationService.js";
 import { streamSessionStore } from "./services/StreamSessionStore.js";
 import { scheduleQueue, cleanupQueue } from "./queues/index.js";
 import { Channel, Playlist } from "./models/index.js";
@@ -224,6 +225,19 @@ async function bootstrap(): Promise<void> {
     autoDjService.startWatcher();
     streamSessionStore.startCleanup();
     logger.info("AutoDJ watcher and stream session store started");
+
+    // Playlist materialization: builds Playlist+PlaylistItem rows from grade_programas
+    // so AutoDJService can find them. Runs at startup + every 15 minutes.
+    const materializeToday = () => {
+      const today = new Date().toISOString().split("T")[0]!;
+      void playlistMaterializationService.materializeAllChannels(today).catch(err =>
+        logger.warn("Playlist materialization failed", { err: (err as Error).message }),
+      );
+    };
+    materializeToday();
+    const MATERIALIZE_INTERVAL_MS = 15 * 60 * 1000;
+    const materializeTimer = setInterval(materializeToday, MATERIALIZE_INTERVAL_MS);
+    if ((materializeTimer as NodeJS.Timeout).unref) (materializeTimer as NodeJS.Timeout).unref();
   } catch (err) {
     logger.warn("Startup service error (app will still run)", { err });
   }

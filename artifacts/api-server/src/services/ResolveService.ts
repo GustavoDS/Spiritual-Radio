@@ -6,6 +6,15 @@ import { logger } from "../lib/logger.js";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
+export interface ResolvedItemContent {
+  id: number;
+  titulo: string;
+  tipo: string;
+  audio_url: string | null;
+  imagem_url: string | null;
+  duracao: number;
+}
+
 export interface ResolvedItem {
   ordem: number;
   content_id: number;
@@ -13,12 +22,18 @@ export interface ResolvedItem {
   tipo: string;
   duration_sec: number;
   starts_at: string | null;
+  /** Effective audio URL (prefers mixed_audio_url, falls back to audio_url). */
+  audio_url: string | null;
+  /** Full content object for frontend rendering. */
+  content: ResolvedItemContent;
 }
 
 export interface ResolveResult {
   programa: { id: number; nome: string; duracao_min: number };
   starts_at: string | null;
   duracao_real_sec: number;
+  /** Alias of duracao_real_sec — added for frontend compatibility. */
+  total_duration_sec: number;
   items: ResolvedItem[];
   ajustes: { vazio_sec: number; trocas: number };
 }
@@ -106,7 +121,7 @@ export class ResolveService {
           through: { attributes: [] },
           attributes: [],
         }],
-        attributes: ["id", "titulo", "tipo", "duracao"],
+        attributes: ["id", "titulo", "tipo", "duracao", "audio_url", "mixed_audio_url", "imagem_url"],
       });
 
       // Prefer non-recently-played; fall back to all if pool would be empty
@@ -217,6 +232,7 @@ export class ResolveService {
       if (currentTime) {
         currentTime = addSecondsToIso(currentTime, c.duracao ?? 0);
       }
+      const audioUrl = c.mixed_audio_url ?? c.audio_url ?? null;
       return {
         ordem: i + 1,
         content_id: c.id,
@@ -224,6 +240,15 @@ export class ResolveService {
         tipo: c.tipo,
         duration_sec: c.duracao ?? 0,
         starts_at: itemStartsAt,
+        audio_url: audioUrl,
+        content: {
+          id: c.id,
+          titulo: c.titulo,
+          tipo: c.tipo,
+          audio_url: audioUrl,
+          imagem_url: c.imagem_url ?? null,
+          duracao: c.duracao ?? 0,
+        },
       };
     });
 
@@ -251,6 +276,7 @@ export class ResolveService {
       programa: { id: programa.id, nome: programa.nome, duracao_min: programa.duracao_min },
       starts_at: startsAt,
       duracao_real_sec,
+      total_duration_sec: duracao_real_sec,
       items: resolvedItems,
       ajustes: { vazio_sec, trocas },
     };
