@@ -1,0 +1,32 @@
+Contexto: O frontend envia category: "versiculo" para os endpoints de background tracks, mas o backend retorna 500 com:
+
+invalid input value for enum enum_background_tracks_category: "versiculo"
+O áudio é gerado e subido pro R2 com sucesso, mas o INSERT no Postgres falha porque o enum do banco não tem o valor versiculo. Categorias atuais: oracao | reflexao | mensagem | any. Precisamos adicionar versiculo como categoria válida em todo o fluxo.
+
+Tarefas:
+
+Migration Sequelize adicionando 'versiculo' ao enum do Postgres:
+
+ALTER TYPE "enum_background_tracks_category" ADD VALUE IF NOT EXISTS 'versiculo';
+ALTER TYPE ... ADD VALUE não pode rodar dentro de transação no Postgres. Configure a migration com { transaction: false } ou use queryInterface.sequelize.query(..., { transaction: null }).
+Se existir um enum separado para as settings (ex.: enum_background_track_settings_content_type), aplicar o mesmo ADD VALUE nele.
+Model BackgroundTrack (src/modules/background-tracks/background-tracks.model.ts ou similar): adicionar 'versiculo' na definição DataTypes.ENUM(...) do campo category.
+
+Model BackgroundTrackSettings (se existir): adicionar 'versiculo' no enum de content_type.
+
+Controller / DTO / validators (background-tracks.controller.ts, schemas Zod/Joi se houver): incluir 'versiculo' na lista de categorias aceitas para:
+
+POST /admin/background-tracks (create manual)
+POST /admin/background-tracks/generate (gerar via ElevenLabs)
+PATCH /admin/background-tracks/:id
+GET /admin/background-tracks/settings/:contentType e PATCH correspondente
+Mixagem / seleção de trilha por tipo de conteúdo: se houver lógica que mapeia content.tipo → BackgroundTrackCategory (ex.: ao escolher trilha para conteúdos do tipo versiculo), garantir que 'versiculo' esteja contemplado e faça fallback para 'any' quando não houver trilha específica.
+
+Testes: ajustar fixtures/testes que enumeram as categorias.
+
+Verificação:
+
+Rodar a migration em dev.
+curl -X POST /api/admin/background-tracks/generate com {"category":"versiculo","prompt":"...","duration_seconds":45} deve retornar 200 com a trilha criada.
+GET /api/admin/background-tracks deve listá-la com category: "versiculo".
+Observação: Duas trilhas de versículo já foram geradas e subidas pro R2 nessas tentativas que falharam (URLs nos logs el-1779845327950-...mp3 e el-1779845358156-...mp3). Não regere — após a migration, vou cadastrá-las manualmente pelo formulário "Adicionar trilha por URL" pra não desperdiçar créditos ElevenLabs.

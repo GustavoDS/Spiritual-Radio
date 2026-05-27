@@ -1,6 +1,6 @@
 import { Model, DataTypes, type Sequelize } from "sequelize";
 
-export type BackgroundTrackCategory = "oracao" | "reflexao" | "mensagem" | "generico";
+export type BackgroundTrackCategory = "oracao" | "reflexao" | "mensagem" | "generico" | "versiculo";
 export type BackgroundTrackSource = "manual" | "elevenlabs";
 
 export class BackgroundTrack extends Model {
@@ -26,7 +26,7 @@ export function initBackgroundTrack(sequelize: Sequelize): void {
       name: { type: DataTypes.STRING(255), allowNull: false },
       url: { type: DataTypes.TEXT, allowNull: false, comment: "Public URL of the MP3/WAV/OGG file in storage" },
       category: {
-        type: DataTypes.ENUM("oracao", "reflexao", "mensagem", "generico"),
+        type: DataTypes.ENUM("oracao", "reflexao", "mensagem", "generico", "versiculo"),
         allowNull: false,
         defaultValue: "generico",
       },

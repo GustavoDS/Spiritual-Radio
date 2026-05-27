@@ -633,6 +633,22 @@ const migrations = [
   },
 
   {
+    name: "26-background-tracks-add-versiculo-category",
+    // ALTER TYPE … ADD VALUE cannot run inside a transaction in Postgres.
+    // We call raw SQL with transaction: null to bypass Umzug's default transaction.
+    async up({ context: qi }: Ctx) {
+      await getSeq(qi).query(
+        `ALTER TYPE "enum_background_tracks_category" ADD VALUE IF NOT EXISTS 'versiculo';`,
+        { transaction: null } as object,
+      );
+    },
+    async down() {
+      // Postgres does not support removing enum values — no-op for rollback.
+      // To remove it, recreate the enum and migrate existing rows manually.
+    },
+  },
+
+  {
     name: "24-contents-add-usa-vinheta-automatica",
     async up({ context: qi }: Ctx) {
       await sql(qi, `

@@ -223,7 +223,7 @@ export async function getSettings(req: Request, res: Response): Promise<void> {
 export async function upsertSettings(req: Request, res: Response): Promise<void> {
   const { contentType } = req.params as { contentType: string };
 
-  const VALID_TYPES = ["oracao", "reflexao", "mensagem"];
+  const VALID_TYPES = ["oracao", "reflexao", "mensagem", "versiculo"];
   if (!VALID_TYPES.includes(contentType)) {
     throw new HttpError(`Tipo inválido. Válidos: ${VALID_TYPES.join(", ")}`, 400);
   }

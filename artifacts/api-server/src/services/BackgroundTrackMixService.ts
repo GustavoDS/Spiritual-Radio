@@ -9,7 +9,7 @@ import { storageProvider } from "../storage/index.js";
 
 /* ─── Constants ──────────────────────────────────────────────────────────── */
 
-const SPOKEN_TYPES = new Set(["oracao", "reflexao", "mensagem"]);
+const SPOKEN_TYPES = new Set(["oracao", "reflexao", "mensagem", "versiculo"]);
 const MAX_DOWNLOAD_BYTES = 20 * 1024 * 1024; // 20 MB
 const DOWNLOAD_TIMEOUT_MS = 15_000;
 

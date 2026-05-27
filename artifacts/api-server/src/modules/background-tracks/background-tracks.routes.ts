@@ -61,7 +61,7 @@ router.use(authenticate, requireAdmin);
  *             properties:
  *               name: { type: string }
  *               url: { type: string, format: uri }
- *               category: { type: string, enum: [oracao, reflexao, mensagem, generico] }
+ *               category: { type: string, enum: [oracao, reflexao, mensagem, generico, versiculo] }
  *               duration_seconds: { type: number }
  *               tags: { type: array, items: { type: string } }
  */
@@ -88,7 +88,7 @@ router.post("/", createTrack);
  *                 type: string
  *                 example: "Instrumental cristão suave, piano e violino, para oração"
  *               duration_seconds: { type: integer, default: 60, minimum: 10, maximum: 300 }
- *               category: { type: string, enum: [oracao, reflexao, mensagem, generico] }
+ *               category: { type: string, enum: [oracao, reflexao, mensagem, generico, versiculo] }
  *               name: { type: string }
  *     responses:
  *       201: { description: Trilha gerada e salva no storage }
