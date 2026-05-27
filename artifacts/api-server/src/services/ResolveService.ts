@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
-import { Content, PlayHistory, Programa } from "../models/index.js";
+import { Content, Channel, PlayHistory, Programa } from "../models/index.js";
 import type { ReceitaItem, RegrasPrograma } from "../models/Programa.js";
+import { HttpError } from "../middlewares/errorHandler.js";
 import { logger } from "../lib/logger.js";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -69,7 +70,7 @@ export class ResolveService {
     seedExtra?: string,
   ): Promise<ResolveResult> {
     const programa = await Programa.findByPk(programaId);
-    if (!programa) throw new Error(`Programa ${programaId} não encontrado`);
+    if (!programa) throw new HttpError(`Programa ${programaId} não encontrado`, 404);
 
     const receita: ReceitaItem[] = programa.receita;
     const regras: RegrasPrograma = programa.regras;
@@ -93,11 +94,18 @@ export class ResolveService {
     for (const item of receita) {
       const pool = await Content.findAll({
         where: {
-          channel_id: channelId,
           tipo: item.tipo,
           ativo: true,
           duracao: { [Op.gt]: 0, [Op.ne]: null } as Record<symbol, unknown>,
         },
+        include: [{
+          model: Channel,
+          as: "channels",
+          where: { id: channelId },
+          required: true,
+          through: { attributes: [] },
+          attributes: [],
+        }],
         attributes: ["id", "titulo", "tipo", "duracao"],
       });
 

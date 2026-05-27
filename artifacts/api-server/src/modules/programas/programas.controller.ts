@@ -2,6 +2,7 @@ import type { Request, Response } from "express";
 import { programasService } from "./programas.service.js";
 import { resolveService } from "../../services/ResolveService.js";
 import { ok, created, paginated } from "../../utils/response.js";
+import { HttpError } from "../../middlewares/errorHandler.js";
 import type { BlocoPrograma } from "../../models/Programa.js";
 
 export async function getAll(req: Request, res: Response): Promise<void> {
@@ -55,10 +56,17 @@ export async function duplicatePrograma(req: Request, res: Response): Promise<vo
 
 export async function resolvePrograma(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
+  const channelId = Number(body["channel_id"]);
+  if (!Number.isFinite(channelId) || channelId <= 0) {
+    throw new HttpError("channel_id é obrigatório e deve ser um inteiro positivo", 400);
+  }
+  const date = body["date"] as string | undefined;
+  if (!date) throw new HttpError("date é obrigatório (YYYY-MM-DD)", 400);
+
   const result = await resolveService.resolve(
     Number(req.params["id"]),
-    Number(body["channel_id"]),
-    body["date"] as string,
+    channelId,
+    date,
     (body["starts_at"] as string | undefined) ?? null,
     body["seed"] as string | undefined,
   );
