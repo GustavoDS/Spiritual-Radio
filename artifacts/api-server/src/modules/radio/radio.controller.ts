@@ -6,7 +6,8 @@ import { playlistMaterializationService } from "../../services/PlaylistMateriali
 import { autoDjService } from "../../services/AutoDJService.js";
 import { gradeProgramasService } from "../grade-programas/grade-programas.service.js";
 import { backgroundTrackMixService } from "../../services/BackgroundTrackMixService.js";
-import { PlaylistItem, Playlist, Content } from "../../models/index.js";
+import { PlaylistItem, Playlist, Content, MixedAudioCache } from "../../models/index.js";
+import { logger } from "../../lib/logger.js";
 import { ok } from "../../utils/response.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
 import { env } from "../../config/env.js";
@@ -78,13 +79,17 @@ const SPOKEN_TYPES = new Set(["oracao", "reflexao", "mensagem", "versiculo"]);
  *
  * Itera TODOS os playlist_items do canal/data que têm conteúdo spoken sem
  * mixed_audio_url e dispara o mix síncronamente.
- * Útil para forçar re-processamento após falha ou configuração nova.
  *
- * Body: { channel_id: number, date?: string }
- * Returns: { processed, failed, errors[] }
+ * Body:
+ *   channel_id: number      — obrigatório
+ *   date?:      string      — YYYY-MM-DD (padrão: hoje)
+ *   tipo?:      string      — filtrar por tipo de conteúdo (ex: "versiculo")
+ *   force?:     boolean     — se true, limpa mixed_audio_url + cache antes de re-mixar
+ *
+ * Returns: { processed, failed, skipped, cache_cleared, errors[] }
  */
 export async function forceRemixAll(req: Request, res: Response): Promise<void> {
-  const body = req.body as { channel_id?: unknown; date?: unknown };
+  const body = req.body as { channel_id?: unknown; date?: unknown; tipo?: unknown; force?: unknown };
 
   const channelId = Number(body.channel_id);
   if (!Number.isFinite(channelId) || channelId <= 0) {
@@ -95,34 +100,60 @@ export async function forceRemixAll(req: Request, res: Response): Promise<void> 
     ? body.date
     : new Date().toISOString().slice(0, 10);
 
+  const tipoFilter = typeof body.tipo === "string" && body.tipo.trim() ? body.tipo.trim() : null;
+  const force = body.force === true || body.force === "true";
+
+  // Validate tipo when supplied
+  if (tipoFilter && ![...SPOKEN_TYPES].includes(tipoFilter)) {
+    throw new HttpError(`tipo inválido: "${tipoFilter}". Valores aceitos: ${[...SPOKEN_TYPES].join(", ")}`, 400);
+  }
+
   // 1. Find playlist for the channel/date
   const playlist = await Playlist.findOne({ where: { channel_id: channelId, data: date } });
   if (!playlist) {
     throw new HttpError(`Nenhuma playlist encontrada para canal ${channelId} em ${date}. Execute /api/radio/regenerate primeiro.`, 404);
   }
 
-  // 2. Find all spoken content IDs in this playlist
+  // 2. When force=true: clear mixed_audio_url for the target tipo (or all spoken types)
+  //    and purge the full MixedAudioCache so stale hashes from old settings don't block re-mix.
+  let cacheCleared = 0;
+  if (force) {
+    const clearWhere = tipoFilter
+      ? ({ tipo: tipoFilter, mixed_audio_url: { [Op.not]: null } }) as Record<string, unknown>
+      : ({ tipo: { [Op.in]: [...SPOKEN_TYPES] }, mixed_audio_url: { [Op.not]: null } }) as Record<string, unknown>;
+    await Content.update({ mixed_audio_url: null } as Record<string, unknown>, { where: clearWhere });
+    cacheCleared = await MixedAudioCache.destroy({ where: {} });
+    logger.info("force-remix-all: cache cleared", { tipoFilter, cacheCleared });
+  }
+
+  // 3. Find all content IDs in this playlist
   const items = await PlaylistItem.findAll({
     where: { playlist_id: playlist.id, content_id: { [Op.not]: null } },
     attributes: ["content_id"],
   });
-
   const uniqueIds = [...new Set(items.map((i) => i.content_id as number).filter(Boolean))];
 
-  // 3. Fetch spoken contents that have audio_url but no mixed_audio_url yet
+  // 4. Fetch spoken contents that have audio_url but no mixed_audio_url yet
+  const tiposToProcess = tipoFilter ? [tipoFilter] : [...SPOKEN_TYPES];
   const pending = await Content.findAll({
     where: ({
       id: { [Op.in]: uniqueIds },
-      tipo: { [Op.in]: [...SPOKEN_TYPES] },
+      tipo: { [Op.in]: tiposToProcess },
       audio_url: { [Op.not]: null },
       mixed_audio_url: null,
     }) as Record<string, unknown>,
     attributes: ["id", "tipo", "audio_url", "mixed_audio_url", "background_track_id"],
   });
 
-  const results = { processed: 0, failed: 0, skipped: uniqueIds.length - pending.length, errors: [] as string[] };
+  const results = {
+    processed: 0,
+    failed: 0,
+    skipped: uniqueIds.length - pending.length,
+    cache_cleared: cacheCleared,
+    errors: [] as string[],
+  };
 
-  // 4. Process synchronously so the caller sees the full result
+  // 5. Process synchronously so the caller sees the full result
   for (const content of pending) {
     try {
       await backgroundTrackMixService.resolveAudioUrl({
@@ -139,7 +170,12 @@ export async function forceRemixAll(req: Request, res: Response): Promise<void> 
     }
   }
 
-  ok(res, results, `Re-mix concluído para canal ${channelId} em ${date}: ${results.processed} processados, ${results.failed} falhas, ${results.skipped} já tinham mix`);
+  ok(res, results,
+    `Re-mix concluído para canal ${channelId} em ${date}` +
+    (tipoFilter ? ` [tipo=${tipoFilter}]` : "") +
+    `: ${results.processed} processados, ${results.failed} falhas, ${results.skipped} já tinham mix` +
+    (force ? `, ${cacheCleared} entradas de cache limpas` : ""),
+  );
 }
 
 /**

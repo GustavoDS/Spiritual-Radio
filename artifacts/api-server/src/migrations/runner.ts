@@ -737,6 +737,31 @@ const migrations = [
   },
 
   {
+    name: "30-fix-versiculo-background-settings",
+    async up({ context: qi }: Ctx) {
+      // versiculo was seeded with wrong fade times (1000/1500) and weak ducking (-18 → ratio 8).
+      // Fix: standardise fade to 1500/2000 ms and strengthen ducking to -22 dB (ratio ≈ 12.7)
+      // so the voice is clearly above the background track throughout the segment.
+      await sql(qi, `
+        UPDATE background_track_settings
+        SET
+          volume_base  = 0.20,
+          ducking_db   = -22,
+          fade_in_ms   = 1500,
+          fade_out_ms  = 2000
+        WHERE content_type = 'versiculo';
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        UPDATE background_track_settings
+        SET volume_base = 0.15, ducking_db = -18, fade_in_ms = 1000, fade_out_ms = 1500
+        WHERE content_type = 'versiculo';
+      `);
+    },
+  },
+
+  {
     name: "28-playlist-items-add-vinheta-columns",
     async up({ context: qi }: Ctx) {
       await sql(qi, `
