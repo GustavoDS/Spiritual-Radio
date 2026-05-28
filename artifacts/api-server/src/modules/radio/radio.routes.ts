@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate, requireAdmin } from "../../middlewares/auth.js";
-import { getCurrent, getNext, getSchedule, getQueue, regenerate, forceRemixAll } from "./radio.controller.js";
+import { getCurrent, getNext, getSchedule, getQueue, regenerate, forceRemixAll, rebuildDay } from "./radio.controller.js";
 
 /**
  * @swagger
@@ -137,5 +137,53 @@ router.post("/regenerate", requireAdmin, regenerate);
  *                     errors:    { type: array, items: { type: string } }
  */
 router.post("/force-remix-all", requireAdmin, forceRemixAll);
+
+/**
+ * @swagger
+ * /api/radio/rebuild-day:
+ *   post:
+ *     tags: [Rádio]
+ *     summary: Reconstrói do zero a playlist de um canal/dia (admin)
+ *     description: >
+ *       Apaga todos os playlist_items do canal/data e re-materializa usando as
+ *       receitas atuais dos programas + vinhetas da tabela `vinhetas`
+ *       (filtradas por canal + bloco + tipo_vinheta).
+ *       Tipos inválidos na receita (ex: 'vinheta') são ignorados com warn.
+ *       Após materializar, recarrega o AutoDJ do canal.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [channel_id]
+ *             properties:
+ *               channel_id:
+ *                 type: integer
+ *                 example: 1
+ *               date:
+ *                 type: string
+ *                 example: "2026-05-28"
+ *                 description: "Data YYYY-MM-DD (padrão: hoje)"
+ *     responses:
+ *       200:
+ *         description: Playlist reconstruída
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     rebuilt:           { type: boolean }
+ *                     channel_id:        { type: integer }
+ *                     date:              { type: string }
+ *                     slots_created:     { type: integer, description: "Itens de conteúdo (content_id NOT NULL)" }
+ *                     vinhetas_injected: { type: integer, description: "Itens de vinheta injetados (content_id NULL)" }
+ */
+router.post("/rebuild-day", requireAdmin, rebuildDay);
 
 export default router;

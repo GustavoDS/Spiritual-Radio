@@ -74,6 +74,15 @@ function addSecondsToIso(isoStr: string, sec: number): string {
   return new Date(new Date(isoStr).getTime() + sec * 1000).toISOString();
 }
 
+/* ─── Valid content types ────────────────────────────────────────────────── */
+
+/**
+ * Types that live in the `contents` table and can be resolved by ResolveService.
+ * Vinhetas are handled separately by PlaylistMaterializationService via the
+ * `vinhetas` table (bloco + tipo_vinheta + channel_id) and must NOT appear here.
+ */
+const TIPOS_VALIDOS_CONTENTS = ["musica", "oracao", "mensagem", "reflexao", "versiculo"];
+
 /* ─── ResolveService ─────────────────────────────────────────────────────── */
 
 export class ResolveService {
@@ -107,6 +116,17 @@ export class ResolveService {
 
     const contentByTipo = new Map<string, Content[]>();
     for (const item of receita) {
+      // Guard: skip types that don't live in `contents` (e.g. 'vinheta', which
+      // is injected from the `vinhetas` table by PlaylistMaterializationService).
+      if (!TIPOS_VALIDOS_CONTENTS.includes(item.tipo)) {
+        logger.warn("[ResolveService] Tipo inválido ignorado na receita", {
+          tipo: item.tipo,
+          programa: programa.nome,
+          programaId,
+        });
+        continue;
+      }
+
       const pool = await Content.findAll({
         where: ({
           tipo: item.tipo,

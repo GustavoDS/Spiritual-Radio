@@ -179,6 +179,53 @@ export async function forceRemixAll(req: Request, res: Response): Promise<void> 
 }
 
 /**
+ * POST /api/radio/rebuild-day
+ *
+ * Limpa completamente a playlist do canal/dia e re-materializa do zero usando
+ * as receitas atuais dos programas + vinhetas da tabela `vinhetas`.
+ *
+ * Body:
+ *   channel_id: number   — obrigatório
+ *   date?:      string   — YYYY-MM-DD (padrão: hoje)
+ *
+ * Returns: { rebuilt, channel_id, date, slots_created, vinhetas_injected }
+ */
+export async function rebuildDay(req: Request, res: Response): Promise<void> {
+  const body = req.body as { channel_id?: unknown; date?: unknown };
+
+  const channelId = Number(body.channel_id);
+  if (!Number.isFinite(channelId) || channelId <= 0) {
+    throw new HttpError("channel_id é obrigatório e deve ser um inteiro positivo", 400);
+  }
+
+  const date = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+    ? body.date
+    : new Date().toISOString().slice(0, 10);
+
+  // materializeDay already destroys all existing items for the day and re-creates
+  const result = await playlistMaterializationService.materializeDay(channelId, date);
+
+  // Count content slots vs vinheta rows (vinheta rows have content_id = null)
+  const [slotsCreated, vinhetasInjected] = await Promise.all([
+    PlaylistItem.count({ where: { playlist_id: result.playlist_id, content_id: { [Op.not]: null } } }),
+    PlaylistItem.count({ where: { playlist_id: result.playlist_id, content_id: null } }),
+  ]);
+
+  // Reload AutoDJ state for the channel
+  await autoDjService.reload(channelId);
+
+  logger.info(`[rebuild-day] channel=${channelId} date=${date} slots=${slotsCreated} vinhetas=${vinhetasInjected}`);
+
+  ok(res, {
+    rebuilt: true,
+    channel_id: channelId,
+    date,
+    slots_created: slotsCreated,
+    vinhetas_injected: vinhetasInjected,
+  }, `Playlist do canal ${channelId} em ${date} reconstruída: ${slotsCreated} slots de conteúdo + ${vinhetasInjected} vinhetas`);
+}
+
+/**
  * POST /api/radio/regenerate
  * Força a rematerialização da playlist do dia para um ou todos os canais.
  * Body: { channel_id?: number, date?: string }
