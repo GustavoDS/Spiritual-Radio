@@ -704,6 +704,33 @@ const migrations = [
       await sql(qi, `ALTER TABLE contents DROP COLUMN IF EXISTS usa_vinheta_automatica;`);
     },
   },
+
+  {
+    name: "28-playlist-items-add-vinheta-columns",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE playlist_items
+          ADD COLUMN IF NOT EXISTS vinheta_url     TEXT,
+          ADD COLUMN IF NOT EXISTS vinheta_duracao INTEGER,
+          ADD COLUMN IF NOT EXISTS vinheta_titulo  VARCHAR(500);
+
+        COMMENT ON COLUMN playlist_items.vinheta_url IS
+          'Audio URL for a vinheta item. When set, content_id is NULL.';
+        COMMENT ON COLUMN playlist_items.vinheta_duracao IS
+          'Duration in seconds of the vinheta segment.';
+        COMMENT ON COLUMN playlist_items.vinheta_titulo IS
+          'Display name of the vinheta (for now-playing metadata).';
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE playlist_items
+          DROP COLUMN IF EXISTS vinheta_url,
+          DROP COLUMN IF EXISTS vinheta_duracao,
+          DROP COLUMN IF EXISTS vinheta_titulo;
+      `);
+    },
+  },
 ];
 
 function umzugLog(level: "info" | "warn" | "error" | "debug", m: unknown): void {

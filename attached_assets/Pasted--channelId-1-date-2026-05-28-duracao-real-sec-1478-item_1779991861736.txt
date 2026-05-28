@@ -1,0 +1,43 @@
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1478,"items":75,"level":"info","message":"ResolveService.resolve","programaId":13,"timestamp":"2026-05-28T18:09:32.976Z","vazio_sec":9322}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1386,"items":35,"level":"info","message":"ResolveService.resolve","programaId":14,"timestamp":"2026-05-28T18:09:33.379Z","vazio_sec":2214}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":15,"timestamp":"2026-05-28T18:09:33.767Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1578,"items":80,"level":"info","message":"ResolveService.resolve","programaId":16,"timestamp":"2026-05-28T18:09:34.195Z","vazio_sec":5622}
+{"channelId":1,"date":"2026-05-28","err":"column \"vinheta_url\" of relation \"playlist_items\" does not exist","level":"error","message":"PlaylistMaterializationService: failed for channel","timestamp":"2026-05-28T18:09:38.666Z"}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":962,"items":50,"level":"info","message":"ResolveService.resolve","programaId":9,"timestamp":"2026-05-28T18:09:39.064Z","vazio_sec":17038}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":2709,"items":95,"level":"info","message":"ResolveService.resolve","programaId":10,"timestamp":"2026-05-28T18:09:39.647Z","vazio_sec":8091}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":11,"timestamp":"2026-05-28T18:09:40.186Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1935,"items":55,"level":"info","message":"ResolveService.resolve","programaId":12,"timestamp":"2026-05-28T18:09:40.929Z","vazio_sec":5265}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1476,"items":75,"level":"info","message":"ResolveService.resolve","programaId":13,"timestamp":"2026-05-28T18:09:41.456Z","vazio_sec":9324}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1439,"items":34,"level":"info","message":"ResolveService.resolve","programaId":14,"timestamp":"2026-05-28T18:09:41.937Z","vazio_sec":2161}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":15,"timestamp":"2026-05-28T18:09:42.534Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1578,"items":80,"level":"info","message":"ResolveService.resolve","programaId":16,"timestamp":"2026-05-28T18:09:43.351Z","vazio_sec":5622}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":962,"items":50,"level":"info","message":"ResolveService.resolve","programaId":9,"timestamp":"2026-05-28T18:09:46.531Z","vazio_sec":17038}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":2713,"items":95,"level":"info","message":"ResolveService.resolve","programaId":10,"timestamp":"2026-05-28T18:09:47.183Z","vazio_sec":8087}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":11,"timestamp":"2026-05-28T18:09:47.617Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1942,"items":60,"level":"info","message":"ResolveService.resolve","programaId":12,"timestamp":"2026-05-28T18:09:48.077Z","vazio_sec":5258}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1478,"items":75,"level":"info","message":"ResolveService.resolve","programaId":13,"timestamp":"2026-05-28T18:09:48.528Z","vazio_sec":9322}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1386,"items":35,"level":"info","message":"ResolveService.resolve","programaId":14,"timestamp":"2026-05-28T18:09:48.942Z","vazio_sec":2214}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":15,"timestamp":"2026-05-28T18:09:49.393Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1578,"items":80,"level":"info","message":"ResolveService.resolve","programaId":16,"timestamp":"2026-05-28T18:09:49.773Z","vazio_sec":5622}
+{"channelId":1,"date":"2026-05-29","err":"column \"vinheta_url\" of relation \"playlist_items\" does not exist","level":"error","message":"PlaylistMaterializationService: failed for channel","timestamp":"2026-05-28T18:09:52.209Z"}
+{"clientId":"ce596f3f-f170-4f85-93e9-9b11e5f58b00","ip":"187.36.60.227","isAdmin":true,"level":"info","message":"SSE client connected","timestamp":"2026-05-28T18:09:52.826Z","total":5}
+{"channelId":1,"date":"2026-05-28","err":"column \"vinheta_url\" of relation \"playlist_items\" does not exist","level":"error","message":"PlaylistMaterializationService: failed for channel","timestamp":"2026-05-28T18:09:55.607Z"}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":962,"items":50,"level":"info","message":"ResolveService.resolve","programaId":9,"timestamp":"2026-05-28T18:09:56.074Z","vazio_sec":17038}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":2709,"items":95,"level":"info","message":"ResolveService.resolve","programaId":10,"timestamp":"2026-05-28T18:09:56.794Z","vazio_sec":8091}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":11,"timestamp":"2026-05-28T18:09:57.415Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1935,"items":55,"level":"info","message":"ResolveService.resolve","programaId":12,"timestamp":"2026-05-28T18:09:57.881Z","vazio_sec":5265}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1476,"items":75,"level":"info","message":"ResolveService.resolve","programaId":13,"timestamp":"2026-05-28T18:09:58.306Z","vazio_sec":9324}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1439,"items":34,"level":"info","message":"ResolveService.resolve","programaId":14,"timestamp":"2026-05-28T18:09:58.825Z","vazio_sec":2161}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":15,"timestamp":"2026-05-28T18:09:59.360Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-29","duracao_real_sec":1578,"items":80,"level":"info","message":"ResolveService.resolve","programaId":16,"timestamp":"2026-05-28T18:09:59.858Z","vazio_sec":5622}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":962,"items":50,"level":"info","message":"ResolveService.resolve","programaId":9,"timestamp":"2026-05-28T18:10:02.768Z","vazio_sec":17038}
+{"clientId":"98b09574-9103-4127-95e6-ebff40950174","level":"info","message":"SSE client disconnected","timestamp":"2026-05-28T18:10:03.425Z","total":4}
+{"clientId":"4bebd44f-82f1-4521-bd4b-ee1323921e73","level":"info","message":"SSE client disconnected","timestamp":"2026-05-28T18:10:03.430Z","total":3}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":2713,"items":95,"level":"info","message":"ResolveService.resolve","programaId":10,"timestamp":"2026-05-28T18:10:03.461Z","vazio_sec":8087}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":11,"timestamp":"2026-05-28T18:10:04.428Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1942,"items":60,"level":"info","message":"ResolveService.resolve","programaId":12,"timestamp":"2026-05-28T18:10:05.190Z","vazio_sec":5258}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1478,"items":75,"level":"info","message":"ResolveService.resolve","programaId":13,"timestamp":"2026-05-28T18:10:05.968Z","vazio_sec":9322}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1386,"items":35,"level":"info","message":"ResolveService.resolve","programaId":14,"timestamp":"2026-05-28T18:10:06.585Z","vazio_sec":2214}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":2813,"items":100,"level":"info","message":"ResolveService.resolve","programaId":15,"timestamp":"2026-05-28T18:10:07.350Z","vazio_sec":11587}
+{"channelId":1,"date":"2026-05-28","duracao_real_sec":1578,"items":80,"level":"info","message":"ResolveService.resolve","programaId":16,"timestamp":"2026-05-28T18:10:08.533Z","vazio_sec":5622}
+{"clientId":"3af3d553-1c39-498e-a055-35ab260a5f9a","ip":"187.36.60.227","isAdmin":false,"level":"info","message":"SSE client connected","timestamp":"2026-05-28T18:10:11.964Z","total":4}
