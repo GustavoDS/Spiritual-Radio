@@ -35,6 +35,8 @@ export interface ChannelDJState {
   nextStartsAt: string | null;
   blockEndsAt: string | null;
   pendingNext: TrackInfo | null;
+  /** Ring buffer: last COOLDOWN_MAX_ITEMS content IDs played (with timestamps). */
+  recentlyPlayed: Array<{ contentId: number; playedAt: Date }>;
 }
 
 export interface NowPlayingInfo {
@@ -56,6 +58,12 @@ export interface NowPlayingInfo {
 
 const DEFAULT_TRACK_DURATION = 300;
 const WATCHER_INTERVAL_MS = 5_000;
+/** Minimum number of pre-loaded items in the queue. */
+const MIN_QUEUE_SIZE = 6;
+/** Maximum items in the recentlyPlayed ring buffer. */
+const COOLDOWN_MAX_ITEMS = 20;
+/** Maximum age of entries in the recentlyPlayed ring buffer (60 min). */
+const COOLDOWN_MAX_MS = 60 * 60 * 1000;
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -77,6 +85,54 @@ function timeStrToDate(timeStr: string): Date {
 }
 
 type PlaylistItemWithContent = PlaylistItem & { content: Content | null };
+
+/**
+ * Maps a PlaylistItemWithContent to a TrackInfo.
+ * Returns null if the item has no playable audio.
+ */
+function itemToTrackInfo(
+  item: PlaylistItemWithContent,
+  channelId: number,
+  endsAt: string | null = null,
+): TrackInfo | null {
+  const isVinheta = !item.content_id && !!item.vinheta_url;
+  const content = isVinheta ? null : item.content;
+
+  if (isVinheta) {
+    return {
+      contentId: -(item.id),
+      titulo: item.vinheta_titulo ?? "Vinheta",
+      tipo: "vinheta",
+      audioUrl: item.vinheta_url!,
+      artworkUrl: null,
+      duracao: item.vinheta_duracao ?? 10,
+      channelId,
+      ordem: item.ordem,
+      horaExecucao: item.hora_execucao,
+      startedAt: item.hora_execucao ? timeStrToDate(item.hora_execucao).toISOString() : null,
+      endsAt,
+    };
+  }
+
+  if (!content) return null;
+  const audioUrl = content.mixed_audio_url ?? content.audio_url ?? null;
+  // Music uses raw audio_url directly (no background mix needed)
+  if (!audioUrl) return null;
+
+  return {
+    contentId: content.id,
+    titulo: content.titulo,
+    tipo: content.tipo,
+    audioUrl,
+    artworkUrl: content.imagem_url ?? null,
+    duracao: content.duracao ?? DEFAULT_TRACK_DURATION,
+    channelId,
+    ordem: item.ordem,
+    horaExecucao: item.hora_execucao,
+    startedAt: item.hora_execucao ? timeStrToDate(item.hora_execucao).toISOString() : null,
+    endsAt,
+  };
+}
 
 /* ─── AutoDJService ──────────────────────────────────────────────────────── */
 
@@ -105,6 +161,7 @@ export class AutoDJService {
         nextStartsAt: null,
         blockEndsAt: null,
         pendingNext: null,
+        recentlyPlayed: [],
       });
     }
     return this.states.get(channelId)!;
@@ -140,6 +197,19 @@ export class AutoDJService {
     }
   }
 
+  /* ── Cooldown helper ────────────────────────────────────────────────── */
+
+  private trackPlayed(state: ChannelDJState, contentId: number): void {
+    if (contentId <= 0) return; // skip vinheta negative IDs
+    const now = new Date();
+    state.recentlyPlayed.push({ contentId, playedAt: now });
+    // Trim: keep last COOLDOWN_MAX_ITEMS within COOLDOWN_MAX_MS
+    const cutoff = now.getTime() - COOLDOWN_MAX_MS;
+    state.recentlyPlayed = state.recentlyPlayed
+      .filter((r) => r.playedAt.getTime() > cutoff)
+      .slice(-COOLDOWN_MAX_ITEMS);
+  }
+
   /* ── Schedule tick (source of truth) ────────────────────────────────── */
 
   private async tickScheduleMode(channelId: number, state: ChannelDJState): Promise<void> {
@@ -162,8 +232,8 @@ export class AutoDJService {
       ],
     } as Record<symbol, unknown>;
 
-    // 2. Next upcoming item (hora_execucao > now; content or vinheta)
-    const nextItem = (await PlaylistItem.findOne({
+    // 2. Fetch next MIN_QUEUE_SIZE upcoming items (hora_execucao > now)
+    const upcomingRaw = (await PlaylistItem.findAll({
       where: {
         playlist_id: playlist.id,
         hora_execucao: { [Op.gt]: nowStr },
@@ -171,43 +241,17 @@ export class AutoDJService {
       } as Record<string | symbol, unknown>,
       include: [{ model: Content, as: "content", required: false }],
       order: [["hora_execucao", "ASC"]],
-    })) as PlaylistItemWithContent | null;
+      limit: MIN_QUEUE_SIZE,
+    })) as PlaylistItemWithContent[];
+
+    const nextItem = upcomingRaw[0] ?? null;
 
     const nextStartsAt = nextItem?.hora_execucao
       ? timeStrToDate(nextItem.hora_execucao).toISOString()
       : null;
 
-    let pendingNext: TrackInfo | null = null;
-    if (nextItem?.content) {
-      const nc = nextItem.content;
-      pendingNext = {
-        contentId: nc.id,
-        titulo: nc.titulo,
-        tipo: nc.tipo,
-        audioUrl: nc.mixed_audio_url ?? nc.audio_url ?? null,
-        artworkUrl: nc.imagem_url ?? null,
-        duracao: nc.duracao ?? DEFAULT_TRACK_DURATION,
-        channelId,
-        ordem: nextItem.ordem,
-        horaExecucao: nextItem.hora_execucao,
-        startedAt: nextStartsAt,
-        endsAt: null,
-      };
-    } else if (nextItem?.vinheta_url) {
-      pendingNext = {
-        contentId: -(nextItem.id),
-        titulo: nextItem.vinheta_titulo ?? "Vinheta",
-        tipo: "vinheta",
-        audioUrl: nextItem.vinheta_url,
-        artworkUrl: null,
-        duracao: nextItem.vinheta_duracao ?? 10,
-        channelId,
-        ordem: nextItem.ordem,
-        horaExecucao: nextItem.hora_execucao,
-        startedAt: nextStartsAt,
-        endsAt: null,
-      };
-    }
+    // Build TrackInfo for first upcoming item (used as pendingNext for offline state)
+    const pendingNext: TrackInfo | null = nextItem ? itemToTrackInfo(nextItem, channelId) : null;
 
     // 3. Most recently started item (hora_execucao <= now; content or vinheta)
     const candidate = (await PlaylistItem.findOne({
@@ -225,7 +269,6 @@ export class AutoDJService {
     if (candidate?.hora_execucao && (candidate.content || candidate.vinheta_url)) {
       const blockStart = timeStrToDate(candidate.hora_execucao);
       const duracao = candidate.content?.duracao ?? candidate.vinheta_duracao ?? DEFAULT_TRACK_DURATION;
-      // End = next item's hora if available, else start + item duration
       const blockEndDate = nextItem?.hora_execucao
         ? timeStrToDate(nextItem.hora_execucao)
         : new Date(blockStart.getTime() + duracao * 1000);
@@ -233,9 +276,22 @@ export class AutoDJService {
     }
 
     // 5. No active item → offline
-    const hasPlayableAudio = currentItem?.content?.audio_url || currentItem?.vinheta_url;
+    const isVinhetaCandidate = !currentItem?.content_id && !!currentItem?.vinheta_url;
+    const hasPlayableAudio = isVinhetaCandidate
+      ? !!currentItem?.vinheta_url
+      : !!(currentItem?.content?.audio_url ?? currentItem?.content?.mixed_audio_url);
+
     if (!currentItem || !hasPlayableAudio) {
       const reason = candidate ? "between_blocks" : "no_schedule";
+      if (!hasPlayableAudio && currentItem) {
+        logger.warn("AutoDJService: current item has no playable audio — skipping to between_blocks", {
+          channelId,
+          content_id: currentItem.content_id,
+          tipo: currentItem.content?.tipo,
+          audio_url: currentItem.content?.audio_url,
+          mixed_audio_url: currentItem.content?.mixed_audio_url,
+        });
+      }
       this.setOffline(channelId, state, reason, nextStartsAt, pendingNext);
       return;
     }
@@ -244,7 +300,7 @@ export class AutoDJService {
     const isVinhetaItem = !currentItem.content_id && !!currentItem.vinheta_url;
     const content = isVinhetaItem ? null : currentItem.content;
 
-    // 6. Compute timing
+    // 6. Compute timing for current item
     const playingSince = timeStrToDate(currentItem.hora_execucao!);
     const itemDuracao = content?.duracao ?? currentItem.vinheta_duracao ?? DEFAULT_TRACK_DURATION;
     const blockEndDate = nextItem?.hora_execucao
@@ -255,7 +311,7 @@ export class AutoDJService {
     // Stable identifier: positive for content, negative (row id) for vinheta
     const currentTrackId = isVinhetaItem ? -(currentItem.id) : (content?.id ?? 0);
 
-    // 7. Already playing this exact item? Just refresh timing
+    // 7. Already playing this exact item? Just refresh timing + extend queue tail.
     const active = state.queue[state.currentIndex];
     if (
       state.isPlaying &&
@@ -265,7 +321,12 @@ export class AutoDJService {
       if (active.endsAt !== endsAt) { active.endsAt = endsAt; state.blockEndsAt = endsAt; }
       state.nextStartsAt = nextStartsAt;
       state.pendingNext = pendingNext;
-      if (pendingNext && state.queue.length < 2) state.queue = [active, pendingNext];
+
+      // Extend queue when it gets short (but don't replace the active head)
+      if (state.queue.length - state.currentIndex < MIN_QUEUE_SIZE) {
+        const tail = this._buildUpcomingQueue(upcomingRaw, channelId);
+        state.queue = [active, ...tail];
+      }
       return;
     }
 
@@ -300,7 +361,9 @@ export class AutoDJService {
           endsAt,
         };
 
-    state.queue = pendingNext ? [track, pendingNext] : [track];
+    // Pre-load upcoming items into the queue
+    const upcomingTracks = this._buildUpcomingQueue(upcomingRaw, channelId);
+    state.queue = [track, ...upcomingTracks];
     state.currentIndex = 0;
     state.isPlaying = true;
     state.playingSince = playingSince;
@@ -312,6 +375,9 @@ export class AutoDJService {
     state.fallbackMode = false;
     state.totalPlays++;
     state.lastQueueLoad = new Date();
+
+    // Update the cooldown ring buffer
+    this.trackPlayed(state, currentTrackId);
 
     // Log RadioPlay only for content items (not vinhetas)
     if (!isVinhetaItem && content) {
@@ -344,8 +410,8 @@ export class AutoDJService {
         startedAt: track.startedAt,
         endsAt: track.endsAt,
       },
-      next: pendingNext
-        ? { id: pendingNext.contentId, titulo: pendingNext.titulo, startedAt: pendingNext.startedAt }
+      next: upcomingTracks[0]
+        ? { id: upcomingTracks[0].contentId, titulo: upcomingTracks[0].titulo, startedAt: upcomingTracks[0].startedAt }
         : null,
       ts,
       source: "schedule",
@@ -357,7 +423,24 @@ export class AutoDJService {
       tipo: track.tipo,
       hora: currentItem.hora_execucao,
       endsAt,
+      queueSize: state.queue.length,
     });
+  }
+
+  /**
+   * Maps upcoming PlaylistItems to TrackInfo[], skipping items with no audio.
+   * Excludes the first item (that is assumed to be the immediate next = pendingNext).
+   */
+  private _buildUpcomingQueue(
+    upcomingRaw: PlaylistItemWithContent[],
+    channelId: number,
+  ): TrackInfo[] {
+    const result: TrackInfo[] = [];
+    for (const item of upcomingRaw) {
+      const ti = itemToTrackInfo(item, channelId);
+      if (ti) result.push(ti);
+    }
+    return result;
   }
 
   /* ── Init ───────────────────────────────────────────────────────────── */
@@ -367,7 +450,6 @@ export class AutoDJService {
     state.scheduleMode = true;
     state.fallbackMode = false;
     state.lastQueueLoad = new Date();
-    // Run first tick immediately to set accurate state
     await this.tickScheduleMode(channelId, state);
   }
 
@@ -477,6 +559,11 @@ export class AutoDJService {
   removeListener(channelId: number): void {
     const state = this.states.get(channelId);
     if (state && state.listenerCount > 0) state.listenerCount--;
+  }
+
+  /** Returns content IDs in the per-channel cooldown ring buffer. */
+  getRecentlyPlayed(channelId: number): number[] {
+    return (this.states.get(channelId)?.recentlyPlayed ?? []).map((r) => r.contentId);
   }
 
   async restart(channelId: number): Promise<void> {

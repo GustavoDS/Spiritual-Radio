@@ -204,6 +204,7 @@ export async function getAdminStatus(_req: Request, res: Response): Promise<void
     const state = stateMap.get(ch.id);
     const listeners = listenerByChannel.get(ch.id);
     const np = autoDjService.getNowPlaying(ch.id);
+    const recentlyPlayedIds = autoDjService.getRecentlyPlayed(ch.id);
     return {
       channelId: ch.id,
       nome: ch.nome,
@@ -217,9 +218,19 @@ export async function getAdminStatus(_req: Request, res: Response): Promise<void
       nextStartsAt: state?.nextStartsAt ?? null,
       listenerCount: listeners?.listeners ?? 0,
       peakListeners: listeners?.peak ?? 0,
+      recentlyPlayedCount: recentlyPlayedIds.length,
+      recentlyPlayedIds,
       currentTrack: np.current
-        ? { titulo: np.current.titulo, tipo: np.current.tipo, startedAt: np.current.startedAt, endsAt: np.current.endsAt, progressSec: np.progressSec, remainingSec: np.remainingSec }
+        ? {
+            titulo: np.current.titulo,
+            tipo: np.current.tipo,
+            startedAt: np.current.startedAt,
+            endsAt: np.current.endsAt,
+            progressSec: np.progressSec,
+            remainingSec: np.remainingSec,
+          }
         : null,
+      upNext: np.upNext.map((t) => ({ id: t.contentId, titulo: t.titulo, tipo: t.tipo })),
     };
   });
 

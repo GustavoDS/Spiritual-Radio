@@ -1,4 +1,2 @@
-- [BackgroundTrackMixService gotchas](background-track-mix.md) — PK da tabela é `content_type` (não `tipo`); `reflexao`/`mensagem`/`versiculo` precisam de settings explícitos com `default_category`.
-- [Vinheta audio bootstrap](vinheta-audio-bootstrap.md) — `pickVinheta()` filtra `audio_url IS NOT NULL`; vinhetas sem TTS são silenciosamente ignoradas. Startup chama `regenerarTodas(true)` para sintetizar.
-- [sequelize.sync alter Docker fail](sequelize-sync-docker.md) — `sync({ alter: true })` falha em Docker/Postgres com "syntax error at or near REFERENCES". Sempre usar migrations Umzug explícitas para schema changes.
-- [_triggerAsyncMixes design](trigger-async-mixes.md) — deve refetch Content do DB (raw audio_url, não mixed_audio_url já calculado pelo ResolveService) e filtrar por `mixed_audio_url IS NULL`.
+- [Stream orchestrator bugs (May 2026)](stream-orchestrator-bugs.md) — 3 bugs fixed in AutoDJService/ResolveService/PlaylistMaterializationService
+- [Dev DB is nearly empty](dev-db-state.md) — content library has only musica (no audio) + pregacao; bugs must be verified in prod

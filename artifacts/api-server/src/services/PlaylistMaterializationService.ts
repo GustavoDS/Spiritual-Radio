@@ -13,6 +13,38 @@ const SPOKEN_TYPES = new Set(["oracao", "reflexao", "mensagem", "versiculo"]);
 /** Safety cap on playlist looping to prevent infinite loops. */
 const MAX_LOOP = 500;
 
+/* ─── Helpers ────────────────────────────────────────────────────────────── */
+
+/** Deterministic shuffle using mulberry32 PRNG (same algorithm as ResolveService). */
+function hashSeed(str: string): number {
+  let h = 0x9e3779b9;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 0x517cc1b727220a95 | 0);
+    h ^= h >>> 16;
+  }
+  return h >>> 0;
+}
+
+function mulberry32(seed: number): () => number {
+  return function () {
+    seed += 0x6d2b79f5;
+    let z = seed;
+    z = Math.imul(z ^ (z >>> 15), z | 1);
+    z ^= z + Math.imul(z ^ (z >>> 7), z | 61);
+    return ((z ^ (z >>> 14)) >>> 0) / 0x100000000;
+  };
+}
+
+function shuffleLoop<T>(arr: T[], seed: string): T[] {
+  const rng = mulberry32(hashSeed(seed));
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
 /* ─── Types ──────────────────────────────────────────────────────────────── */
 
 export interface MaterializeResult {
@@ -175,11 +207,23 @@ export class PlaylistMaterializationService {
         }
       }
 
-      // 5c. Loop remaining time to fill block duration (no vinheta injection in loops)
+      // 5c. Loop remaining time to fill block duration.
+      // Each full cycle through block.items is re-shuffled with a unique seed so
+      // the same tracks don't appear in the same order on every repetition.
+      // This prevents the "same song every 3 tracks" pattern when pools are small.
       const blockDurationSec = block.duracao_min * 60;
       let loopCount = 0;
-      while (elapsed < blockDurationSec - 30 && loopCount < MAX_LOOP) {
-        const template = block.items[loopCount % block.items.length]!;
+      let loopPass = 0;
+      // loopTape holds the current shuffled copy of block.items
+      let loopTape = block.items.length > 0 ? [...block.items] : [];
+      while (elapsed < blockDurationSec - 30 && loopCount < MAX_LOOP && loopTape.length > 0) {
+        const idxInPass = loopCount % loopTape.length;
+        // Start of a new pass → reshuffle with a pass-specific seed for variety
+        if (idxInPass === 0 && loopCount > 0) {
+          loopPass++;
+          loopTape = shuffleLoop(block.items, `${block.grade_id}-pass${loopPass}`);
+        }
+        const template = loopTape[idxInPass]!;
         const durSec = template.duration_sec > 0 ? template.duration_sec : 300;
         rows.push({
           playlist_id: playlist.id,

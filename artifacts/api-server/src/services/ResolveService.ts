@@ -108,11 +108,14 @@ export class ResolveService {
     const contentByTipo = new Map<string, Content[]>();
     for (const item of receita) {
       const pool = await Content.findAll({
-        where: {
+        where: ({
           tipo: item.tipo,
           ativo: true,
-          duracao: { [Op.gt]: 0, [Op.ne]: null } as Record<symbol, unknown>,
-        },
+          // Must have a playable audio file — prevents unresolvable items from
+          // entering the playlist and causing a "between_blocks" gap at runtime.
+          audio_url: { [Op.not]: null },
+          duracao: { [Op.gt]: 0, [Op.ne]: null },
+        }) as Record<string, unknown>,
         include: [{
           model: Channel,
           as: "channels",
@@ -127,7 +130,13 @@ export class ResolveService {
       // Prefer non-recently-played; fall back to all if pool would be empty
       const fresh = pool.filter((c) => !recentIds.has(c.id));
       const available = fresh.length > 0 ? fresh : pool;
-      contentByTipo.set(item.tipo, shuffleWithSeed(available, rng));
+      const shuffled = shuffleWithSeed(available, rng);
+      contentByTipo.set(item.tipo, shuffled);
+
+      logger.info("ResolveService: content pool", {
+        programaId, channelId, tipo: item.tipo,
+        total: pool.length, fresh: fresh.length, available: available.length,
+      });
     }
 
     // 3. Bin-pack each tipo slot

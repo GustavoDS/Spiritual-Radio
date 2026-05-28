@@ -1,0 +1,22 @@
+Problema no orquestrador do stream (canal 1) — investigado pelos endpoints /api/public/stream/1/now-playing.json e /api/admin/stream/status. 3 bugs distintos:
+
+1. Música não é tocada (CRÍTICO)
+Em monitoramento de ~4 min, now-playing só retornou tipo ∈ {oracao, versiculo, mensagem}. Nenhuma faixa com tipo: "musica" foi servida, apesar da biblioteca ter músicas Prontas.
+
+Verificar: o queue builder do backend está lendo slots da grade com category = "musica"? O filtro de elegibilidade de conteúdo musical (status='Pronto', audio_url IS NOT NULL, channel_ids contém 1) está casando? Logar quantos candidatos musica o resolver enxerga por slot.
+Suspeita: a grade do canal 1 pode não ter slots musica, OU o resolver está pulando musica quando não há mixed_audio_url (música geralmente não tem mix de fundo — ela é o fundo). Se for esse o caso, o fallback para audio_url puro precisa estar liberado para tipo = 'musica'.
+2. Conteúdo cortado no meio (CRÍTICO)
+/api/admin/stream/status sempre mostra queueSize: 2. Quando o watcher recarrega a fila (lastQueueLoad), parece substituir o currentTrack em vez de só anexar próximos.
+
+Verificar: a função de reloadQueue deve preservar o item em execução (startedAt <= now < endsAt) e só repor a cauda. Nunca sobrescrever currentTrack se remainingSec > 0.
+Reproduzir: forçar reloadQueue enquanto há faixa tocando → ela deve continuar até endsAt sem trocar.
+Aumentar queueSize mínimo para 5–10 itens para reduzir frequência de reload.
+3. Repetição precoce
+Mesmos títulos voltando em < 30 min (ex.: "Ato de Fé", "Renovação das Forças", "A Esperança Não Deve Morrer").
+
+Verificar: existe janela de cooldown por content_id? Recomendado: não repetir o mesmo id por N=20 faixas ou 60 min, o que vier primeiro. Manter um ring buffer dos últimos IDs servidos por canal.
+Por tipo (versiculo, oracao, mensagem, musica), também aplicar cooldown intra-tipo de pelo menos 10 itens.
+Aceitação
+ now-playing retorna tipo: "musica" proporcional aos slots de música da grade.
+ queueSize reportado ≥ 5 e item atual nunca é substituído por reload.
+ Nenhum content_id repete dentro de 60 min em logs de 2h de stream.
