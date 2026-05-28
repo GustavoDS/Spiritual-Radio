@@ -138,21 +138,41 @@ export class PlaylistMaterializationService {
     };
   }
 
-  /** Materialize playlists for ALL active channels for a given date (default: today). */
+  /**
+   * Materialize playlists for ALL active channels for the given date(s).
+   *
+   * When called **without** a specific `date` (the normal periodic case), this
+   * always materializes **both today and tomorrow**.  This ensures there is
+   * never a "playlist not found" gap when the clock rolls past midnight: the
+   * AutoDJService looks up the playlist keyed by today's date string, and at
+   * 00:00 the new day's playlist is already in the database.
+   *
+   * When an explicit `date` is supplied (e.g. from POST /api/radio/regenerate
+   * with a body date), only that single date is materialized.
+   */
   async materializeAllChannels(date?: string): Promise<MaterializeResult[]> {
-    const d = date ?? new Date().toISOString().split("T")[0]!;
+    // Build the list of dates to materialize
+    const dates: string[] = date
+      ? [date]
+      : [
+          new Date().toISOString().split("T")[0]!,
+          new Date(Date.now() + 86_400_000).toISOString().split("T")[0]!,
+        ];
+
     const channels = await Channel.findAll({ where: { ativo: true }, attributes: ["id"] });
     const results: MaterializeResult[] = [];
 
-    for (const ch of channels) {
-      try {
-        results.push(await this.materializeDay(ch.id, d));
-      } catch (err) {
-        logger.error("PlaylistMaterializationService: failed for channel", {
-          channelId: ch.id,
-          date: d,
-          err: (err as Error).message,
-        });
+    for (const d of dates) {
+      for (const ch of channels) {
+        try {
+          results.push(await this.materializeDay(ch.id, d));
+        } catch (err) {
+          logger.error("PlaylistMaterializationService: failed for channel", {
+            channelId: ch.id,
+            date: d,
+            err: (err as Error).message,
+          });
+        }
       }
     }
 

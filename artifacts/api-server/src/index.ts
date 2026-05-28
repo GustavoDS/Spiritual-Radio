@@ -228,15 +228,16 @@ async function bootstrap(): Promise<void> {
 
     // Playlist materialization: builds Playlist+PlaylistItem rows from grade_programas
     // so AutoDJService can find them. Runs at startup + every 15 minutes.
-    const materializeToday = () => {
-      const today = new Date().toISOString().split("T")[0]!;
-      void playlistMaterializationService.materializeAllChannels(today).catch(err =>
+    // Always materializes TODAY + TOMORROW so the AutoDJ never hits a missing-
+    // playlist gap when the clock rolls past midnight.
+    const materializeSchedule = () => {
+      void playlistMaterializationService.materializeAllChannels().catch(err =>
         logger.warn("Playlist materialization failed", { err: (err as Error).message }),
       );
     };
-    materializeToday();
+    materializeSchedule();
     const MATERIALIZE_INTERVAL_MS = 15 * 60 * 1000;
-    const materializeTimer = setInterval(materializeToday, MATERIALIZE_INTERVAL_MS);
+    const materializeTimer = setInterval(materializeSchedule, MATERIALIZE_INTERVAL_MS);
     if ((materializeTimer as NodeJS.Timeout).unref) (materializeTimer as NodeJS.Timeout).unref();
   } catch (err) {
     logger.warn("Startup service error (app will still run)", { err });

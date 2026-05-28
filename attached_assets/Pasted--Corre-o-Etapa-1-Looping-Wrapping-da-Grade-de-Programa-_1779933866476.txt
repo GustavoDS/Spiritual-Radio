@@ -1,0 +1,200 @@
+# Correção Etapa 1 — Looping/Wrapping da Grade de Programação (AutoDJ)
+
+## Problema identificado
+
+A tabela `grade_programas` possui apenas:
+
+* `horario_inicio`
+
+Ela NÃO possui:
+
+* `horario_fim`
+
+O sistema atualmente calcula o fim de um programa utilizando o próximo bloco da grade.
+
+Exemplo atual:
+
+00:00 → Madrugada Acolhedora
+05:00 → Amanhecer Inspirador
+08:00 → Manhã com Deus
+12:00 → Pausa do Almoço
+14:00 → Tarde Suave
+17:00 → Prime Adoração
+18:00 → Noite Inspirada
+22:00 → Devocional Profundo
+
+O problema ocorre no último bloco do dia:
+
+22:00 → Devocional Profundo
+
+Não existe próximo item no mesmo dia.
+
+O AutoDJ/materialização provavelmente executa algo semelhante:
+
+```ts
+const next = schedules[index + 1]
+
+if (!next) {
+  return between_blocks
+}
+```
+
+Resultado:
+
+* `/now-playing.json` retorna:
+
+  * `"isPlaying": false`
+  * `"offlineReason": "between_blocks"`
+
+durante o bloco das 22h–00h.
+
+---
+
+# Objetivo da correção
+
+Transformar a grade em um ciclo circular (wrap-around diário).
+
+O último bloco do dia deve apontar automaticamente para o primeiro bloco do próximo dia.
+
+Exemplo correto:
+
+22:00 → Devocional Profundo
+00:00 → Madrugada Acolhedora (dia seguinte)
+
+Então:
+
+* o fim do bloco das 22h passa a ser 00:00 do próximo dia
+* o AutoDJ nunca entra em `between_blocks`
+* a rádio permanece contínua 24h
+
+---
+
+# Serviços que precisam ser ajustados
+
+Validar principalmente:
+
+* `PlaylistMaterializationService`
+* `AutoDJService`
+* `ScheduleService`
+* qualquer resolver de:
+
+  * current schedule
+  * next schedule
+  * active block
+  * now playing
+
+---
+
+# Correção lógica esperada
+
+Hoje provavelmente existe algo como:
+
+```ts
+const nextSchedule = schedules[index + 1]
+
+if (!nextSchedule) {
+  return null
+}
+```
+
+Substituir por lógica circular:
+
+```ts
+const current = schedules[index]
+const next = schedules[index + 1] ?? schedules[0]
+```
+
+E quando o próximo item for o primeiro da lista:
+
+```ts
+const wrapped = next === schedules[0]
+```
+
+O horário final deve receber +1 dia:
+
+```ts
+if (wrapped) {
+  end = end.plus({ days: 1 })
+}
+```
+
+---
+
+# Comportamento esperado após correção
+
+Programação:
+
+00:00 → 05:00
+05:00 → 08:00
+08:00 → 12:00
+12:00 → 14:00
+14:00 → 17:00
+17:00 → 18:00
+18:00 → 22:00
+22:00 → 00:00 (dia seguinte)
+
+---
+
+# Validação obrigatória
+
+Após deploy:
+
+## 1. Regenerar playlists
+
+```bash
+POST /api/radio/regenerate
+```
+
+Body opcional:
+
+```json
+{
+  "channel_id": 1
+}
+```
+
+---
+
+## 2. Validar now-playing
+
+Endpoint:
+
+```bash
+GET /api/public/stream/1/now-playing.json
+```
+
+Durante o período:
+
+* 22:00 → 00:00
+
+Resultado esperado:
+
+```json
+{
+  "isPlaying": true
+}
+```
+
+E NÃO:
+
+```json
+{
+  "offlineReason": "between_blocks"
+}
+```
+
+---
+
+# Importante
+
+Timezone NÃO é a causa principal deste bug específico.
+
+Foi validado no ambiente Docker:
+
+* Container Node → UTC
+* PostgreSQL → UTC
+* Banco → UTC
+
+O problema real identificado foi exclusivamente:
+
+* ausência de wrap-around/ciclo no último bloco da grade.

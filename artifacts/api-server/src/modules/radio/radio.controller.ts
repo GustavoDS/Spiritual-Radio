@@ -85,15 +85,31 @@ export async function regenerate(req: Request, res: Response): Promise<void> {
     if (!Number.isFinite(channelId) || channelId <= 0) {
       throw new HttpError("channel_id deve ser um inteiro positivo", 400);
     }
-    const result = await playlistMaterializationService.materializeDay(channelId, date);
-    await autoDjService.reload(channelId);
-    ok(res, result, `Fila regenerada: ${result.items_created} itens para canal ${channelId} em ${date}`);
+    // When an explicit date is given, materialize only that date; otherwise
+    // materialize today + tomorrow (same as the background timer).
+    if (body.date) {
+      const result = await playlistMaterializationService.materializeDay(channelId, date);
+      await autoDjService.reload(channelId);
+      ok(res, result, `Fila regenerada: ${result.items_created} itens para canal ${channelId} em ${date}`);
+    } else {
+      const today = new Date().toISOString().split("T")[0]!;
+      const tomorrow = new Date(Date.now() + 86_400_000).toISOString().split("T")[0]!;
+      const [r1, r2] = await Promise.all([
+        playlistMaterializationService.materializeDay(channelId, today),
+        playlistMaterializationService.materializeDay(channelId, tomorrow),
+      ]);
+      await autoDjService.reload(channelId);
+      ok(res, { results: [r1, r2], total_items: r1.items_created + r2.items_created }, `Fila regenerada para canal ${channelId}: ${r1.items_created + r2.items_created} itens (hoje + amanhã)`);
+    }
   } else {
-    const results = await playlistMaterializationService.materializeAllChannels(date);
+    // No channel_id: materialize all channels. Pass `date` only when explicitly
+    // provided; otherwise materializeAllChannels() handles today + tomorrow.
+    const results = await playlistMaterializationService.materializeAllChannels(body.date ? date : undefined);
     for (const r of results) {
       await autoDjService.reload(r.channel_id).catch(() => {});
     }
     const totalItems = results.reduce((s, r) => s + r.items_created, 0);
-    ok(res, { results, total_items: totalItems, date }, `Fila regenerada para ${results.length} canal(is): ${totalItems} itens`);
+    const label = body.date ? `em ${date}` : "hoje + amanhã";
+    ok(res, { results, total_items: totalItems }, `Fila regenerada para ${results.length} canal(is): ${totalItems} itens (${label})`);
   }
 }
