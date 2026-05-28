@@ -154,14 +154,22 @@ export class AutoDJService {
       return;
     }
 
-    // 2. Next upcoming block (hora_execucao > now, has audio)
+    // Helper condition: has either a content or a vinheta audio
+    const HAS_AUDIO = {
+      [Op.or]: [
+        { content_id: { [Op.ne]: null } },
+        { vinheta_url: { [Op.ne]: null } },
+      ],
+    } as Record<symbol, unknown>;
+
+    // 2. Next upcoming item (hora_execucao > now; content or vinheta)
     const nextItem = (await PlaylistItem.findOne({
       where: {
         playlist_id: playlist.id,
         hora_execucao: { [Op.gt]: nowStr },
-        content_id: { [Op.ne]: null },
-      },
-      include: [{ model: Content, as: "content" }],
+        ...HAS_AUDIO,
+      } as Record<string | symbol, unknown>,
+      include: [{ model: Content, as: "content", required: false }],
       order: [["hora_execucao", "ASC"]],
     })) as PlaylistItemWithContent | null;
 
@@ -185,85 +193,112 @@ export class AutoDJService {
         startedAt: nextStartsAt,
         endsAt: null,
       };
+    } else if (nextItem?.vinheta_url) {
+      pendingNext = {
+        contentId: -(nextItem.id),
+        titulo: nextItem.vinheta_titulo ?? "Vinheta",
+        tipo: "vinheta",
+        audioUrl: nextItem.vinheta_url,
+        artworkUrl: null,
+        duracao: nextItem.vinheta_duracao ?? 10,
+        channelId,
+        ordem: nextItem.ordem,
+        horaExecucao: nextItem.hora_execucao,
+        startedAt: nextStartsAt,
+        endsAt: null,
+      };
     }
 
-    // 3. Most recently started block (hora_execucao <= now)
+    // 3. Most recently started item (hora_execucao <= now; content or vinheta)
     const candidate = (await PlaylistItem.findOne({
       where: {
         playlist_id: playlist.id,
         hora_execucao: { [Op.lte]: nowStr },
-        content_id: { [Op.ne]: null },
-      },
-      include: [{ model: Content, as: "content" }],
+        ...HAS_AUDIO,
+      } as Record<string | symbol, unknown>,
+      include: [{ model: Content, as: "content", required: false }],
       order: [["hora_execucao", "DESC"]],
     })) as PlaylistItemWithContent | null;
 
-    // 4. Verify block hasn't expired
-    // A block is active while: now >= hora_execucao AND now < nextBlock.hora_execucao (or now < hora_execucao + duracao)
+    // 4. Verify the candidate is still active (block hasn't expired)
     let currentItem: PlaylistItemWithContent | null = null;
-    if (candidate?.hora_execucao && candidate.content) {
+    if (candidate?.hora_execucao && (candidate.content || candidate.vinheta_url)) {
       const blockStart = timeStrToDate(candidate.hora_execucao);
-      const duracao = candidate.content.duracao ?? DEFAULT_TRACK_DURATION;
-      // End = next block start if exists, else start + duracao
+      const duracao = candidate.content?.duracao ?? candidate.vinheta_duracao ?? DEFAULT_TRACK_DURATION;
+      // End = next item's hora if available, else start + item duration
       const blockEndDate = nextItem?.hora_execucao
         ? timeStrToDate(nextItem.hora_execucao)
         : new Date(blockStart.getTime() + duracao * 1000);
-
-      if (now < blockEndDate) {
-        currentItem = candidate;
-      }
-      // else: block ended, between blocks
+      if (now < blockEndDate) currentItem = candidate;
     }
 
-    // 5. No active block → offline
-    if (!currentItem || !currentItem.content?.audio_url) {
+    // 5. No active item → offline
+    const hasPlayableAudio = currentItem?.content?.audio_url || currentItem?.vinheta_url;
+    if (!currentItem || !hasPlayableAudio) {
       const reason = candidate ? "between_blocks" : "no_schedule";
       this.setOffline(channelId, state, reason, nextStartsAt, pendingNext);
       return;
     }
 
-    const content = currentItem.content!;
+    // Distinguish vinheta vs content item
+    const isVinhetaItem = !currentItem.content_id && !!currentItem.vinheta_url;
+    const content = isVinhetaItem ? null : currentItem.content;
 
-    // 6. Compute timing for active block
+    // 6. Compute timing
     const playingSince = timeStrToDate(currentItem.hora_execucao!);
+    const itemDuracao = content?.duracao ?? currentItem.vinheta_duracao ?? DEFAULT_TRACK_DURATION;
     const blockEndDate = nextItem?.hora_execucao
       ? timeStrToDate(nextItem.hora_execucao)
-      : new Date(playingSince.getTime() + (content.duracao ?? DEFAULT_TRACK_DURATION) * 1000);
+      : new Date(playingSince.getTime() + itemDuracao * 1000);
     const endsAt = blockEndDate.toISOString();
 
-    // 7. Already playing this exact block? Just refresh endsAt and next
+    // Stable identifier: positive for content, negative (row id) for vinheta
+    const currentTrackId = isVinhetaItem ? -(currentItem.id) : (content?.id ?? 0);
+
+    // 7. Already playing this exact item? Just refresh timing
     const active = state.queue[state.currentIndex];
     if (
       state.isPlaying &&
       active?.horaExecucao === currentItem.hora_execucao &&
-      active.contentId === content.id
+      active.contentId === currentTrackId
     ) {
-      if (active.endsAt !== endsAt) {
-        active.endsAt = endsAt;
-        state.blockEndsAt = endsAt;
-      }
+      if (active.endsAt !== endsAt) { active.endsAt = endsAt; state.blockEndsAt = endsAt; }
       state.nextStartsAt = nextStartsAt;
       state.pendingNext = pendingNext;
       if (pendingNext && state.queue.length < 2) state.queue = [active, pendingNext];
       return;
     }
 
-    // 8. New block — transition
+    // 8. New item — transition
     const wasPlaying = state.isPlaying;
 
-    const track: TrackInfo = {
-      contentId: content.id,
-      titulo: content.titulo,
-      tipo: content.tipo,
-      audioUrl: content.mixed_audio_url ?? content.audio_url ?? null,
-      artworkUrl: content.imagem_url ?? null,
-      duracao: content.duracao ?? DEFAULT_TRACK_DURATION,
-      channelId,
-      ordem: currentItem.ordem,
-      horaExecucao: currentItem.hora_execucao,
-      startedAt: playingSince.toISOString(),
-      endsAt,
-    };
+    const track: TrackInfo = isVinhetaItem
+      ? {
+          contentId: currentTrackId,
+          titulo: currentItem.vinheta_titulo ?? "Vinheta",
+          tipo: "vinheta",
+          audioUrl: currentItem.vinheta_url!,
+          artworkUrl: null,
+          duracao: currentItem.vinheta_duracao ?? 10,
+          channelId,
+          ordem: currentItem.ordem,
+          horaExecucao: currentItem.hora_execucao,
+          startedAt: playingSince.toISOString(),
+          endsAt,
+        }
+      : {
+          contentId: content!.id,
+          titulo: content!.titulo,
+          tipo: content!.tipo,
+          audioUrl: content!.mixed_audio_url ?? content!.audio_url ?? null,
+          artworkUrl: content!.imagem_url ?? null,
+          duracao: content!.duracao ?? DEFAULT_TRACK_DURATION,
+          channelId,
+          ordem: currentItem.ordem,
+          horaExecucao: currentItem.hora_execucao,
+          startedAt: playingSince.toISOString(),
+          endsAt,
+        };
 
     state.queue = pendingNext ? [track, pendingNext] : [track];
     state.currentIndex = 0;
@@ -278,13 +313,16 @@ export class AutoDJService {
     state.totalPlays++;
     state.lastQueueLoad = new Date();
 
-    RadioPlay.create({
-      channel_id: channelId,
-      content_id: content.id,
-      titulo: content.titulo,
-      tipo: content.tipo,
-      played_at: playingSince,
-    }).catch(() => {});
+    // Log RadioPlay only for content items (not vinhetas)
+    if (!isVinhetaItem && content) {
+      RadioPlay.create({
+        channel_id: channelId,
+        content_id: content.id,
+        titulo: content.titulo,
+        tipo: content.tipo,
+        played_at: playingSince,
+      }).catch(() => {});
+    }
 
     const ts = new Date().toISOString();
 
@@ -292,17 +330,17 @@ export class AutoDJService {
       realtimeService.broadcastPublic("radio_online", {
         channelId,
         ts,
-        currentTrack: { id: content.id, titulo: content.titulo },
+        currentTrack: { id: track.contentId, titulo: track.titulo },
       });
     }
 
     realtimeService.broadcastPublic("current_track_changed", {
       channelId,
       current: {
-        id: content.id,
-        titulo: content.titulo,
-        audioUrl: content.mixed_audio_url ?? content.audio_url,
-        artworkUrl: content.imagem_url,
+        id: track.contentId,
+        titulo: track.titulo,
+        audioUrl: track.audioUrl,
+        artworkUrl: track.artworkUrl,
         startedAt: track.startedAt,
         endsAt: track.endsAt,
       },
@@ -315,7 +353,8 @@ export class AutoDJService {
 
     logger.info("AutoDJService: schedule block started", {
       channelId,
-      titulo: content.titulo,
+      titulo: track.titulo,
+      tipo: track.tipo,
       hora: currentItem.hora_execucao,
       endsAt,
     });

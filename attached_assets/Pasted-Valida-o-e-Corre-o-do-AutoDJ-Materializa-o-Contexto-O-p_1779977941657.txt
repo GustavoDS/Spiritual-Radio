@@ -1,0 +1,82 @@
+Validação e Correção do AutoDJ / Materialização
+Contexto
+O player web (frontend) já está 100% manifest-driven: consome live.m3u8 para a sequência real de áudio e now-playing.json apenas para metadados de UI. As transições estão suaves, mas o conteúdo que o backend está servindo não corresponde ao que foi projetado.
+
+Evidência coletada via DevTools (canal 1, 2026-05-28 ~01:11 BRT):
+
+GET /api/public/radio/current
+{
+  "current": {
+    "id": 238,
+    "titulo": "Oração do Bom Pastor (Tradicional)",
+    "tipo": "oracao",
+    "audio_url": "https://pub-...r2.dev/audio/tts-1779671662646-atup4di4xqg.mp3",
+    "mixed_audio_url": null,          // ❌ deveria ter mix com música de fundo
+    "background_track_id": null,      // ❌ não foi atribuído background
+    "usa_vinheta_automatica": true,   // ✅ mas nenhuma vinheta veio antes
+    "duracao": 20
+  },
+  "schedule": null,                   // ⚠️ bloco "devocional" (22:00–00:00) não está casando
+  "source": "playlist"
+}
+Bugs confirmados
+1. mixed_audio_url está null em conteúdos com áudio de fundo configurado
+Conteúdos do tipo oracao, reflexao, versiculo, mensagem devem rodar com música de fundo (mix TTS + background).
+Hoje o PlaylistMaterializationService está expondo apenas o audio_url cru (TTS seco), sem mixagem.
+Validar: o pipeline de mixagem (MixerService ou equivalente) está sendo disparado quando o item entra na playlist materializada? O resultado está sendo persistido em contents.mixed_audio_url (ou em playlist_items.audio_url_final)?
+2. Vinhetas não aparecem no live.m3u8 nem em now-playing.json
+contents.usa_vinheta_automatica = true (conteúdo 238), porém nenhum segmento de vinheta precede o item no manifesto HLS.
+Validar: o materializador está inserindo o segmento de vinheta (tipo='vinheta') imediatamente antes de conteúdos com usa_vinheta_automatica=true? Há regra por categoria/bloco para escolher qual vinheta?
+3. schedule: null durante bloco existente
+Às 01:11 BRT o item está dentro do bloco madrugada (00:00–05:00, id=1), mas o endpoint retorna schedule: null.
+Validar: o resolver de schedule está usando TZ=America/Sao_Paulo corretamente no getCurrent()? Possível bug de UTC vs local após o ajuste de fuso.
+4. Manifesto HLS provavelmente desalinhado com o que o /radio/current retorna
+O frontend está sincronizando pelo live.m3u8 via #EXT-X-PROGRAM-DATE-TIME. Se o manifest emitir apenas audio_url cru, o player nunca tocará o mixed_audio_url.
+Regra: o URL dentro de cada #EXTINF deve ser o URL final reproduzível (já mixado, se aplicável), na MESMA ordem dos itens persistidos em playlist_items, incluindo vinhetas.
+O que precisa ser entregue
+A) Materialização de playlist
+Para cada playlist_item cujo content.tipo IN ('oracao','reflexao','versiculo','mensagem') e tenha background_track_id (ou regra default por tipo/bloco):
+Gerar o mix TTS + background (loop/fade), persistir em R2.
+Salvar URL em contents.mixed_audio_url (e/ou playlist_items.audio_url_final).
+Para cada item com usa_vinheta_automatica=true:
+Inserir um playlist_item adicional do tipo vinheta imediatamente antes, selecionado por categoria/bloco/aleatório conforme regra existente.
+Reemitir live.m3u8:
+Cada #EXTINF:<dur>,<title> seguido do URL final (mixed se existir, senão audio_url).
+Preservar #EXT-X-PROGRAM-DATE-TIME em cada segmento (já está OK).
+B) now-playing.json
+current.mixed_audio_url deve refletir o que está realmente tocando agora no manifesto.
+current.audio_url pode ficar como fallback, mas o frontend prioriza mixed_audio_url.
+Incluir o item de vinheta como current enquanto ele estiver tocando (não pular direto para a oração).
+C) /radio/current e schedule
+Resolver schedule por now() em America/Sao_Paulo, comparando horario_inicio/horario_fim como TIME no mesmo fuso.
+Bloco devocional (22:00–00:00) e madrugada (00:00–05:00) precisam ser reconhecidos corretamente na virada da meia-noite.
+Como validar (cenário de teste)
+# 1. Forçar re-materialização do canal 1 para hoje + amanhã
+POST /api/radio/regenerate
+{ "channel_id": 1 }
+
+# 2. Inspecionar o manifest
+curl https://api-radio.nexoprime.tec.br/api/public/stream/1/live.m3u8
+
+#    Esperado: alternância vinheta → oração/reflexão → música → ...
+#    URLs de oração devem apontar para arquivos *_mixed.mp3 (ou similar)
+
+# 3. now-playing.json durante uma oração
+curl https://api-radio.nexoprime.tec.br/api/public/stream/1/now-playing.json | jq .data.current
+
+#    Esperado:
+#    {
+#      "mixed_audio_url": "https://...r2.dev/mixes/238_bg12.mp3",
+#      "usa_vinheta_automatica": true,
+#      ...
+#    }
+
+# 4. /radio/current durante bloco madrugada
+curl ".../api/public/radio/current?channel_id=1"
+#    Esperado: schedule.tipo == "madrugada" (não null)
+Critério de aceite
+ 100% dos itens oracao/reflexao/versiculo/mensagem no manifest têm mixed_audio_url válido.
+ Toda oração com usa_vinheta_automatica=true é precedida por um segmento de vinheta no manifest.
+ schedule nunca é null quando há bloco ativo no fuso America/Sao_Paulo.
+ live.m3u8 e now-playing.json permanecem consistentes entre si (mesmo item, mesma URL final).
+Observação: o frontend já está pronto e tocando exatamente o que vier no live.m3u8. Qualquer correção no backend reflete instantaneamente no player sem novo deploy do frontend.

@@ -6,6 +6,12 @@ export class PlaylistItem extends Model {
   declare content_id: number | null;
   declare ordem: number;
   declare hora_execucao: string | null;
+  /** Audio URL for a vinheta item (content_id is null when this is set). */
+  declare vinheta_url: string | null;
+  /** Duration in seconds of the vinheta. */
+  declare vinheta_duracao: number | null;
+  /** Display title of the vinheta. */
+  declare vinheta_titulo: string | null;
   declare createdAt: Date;
   declare updatedAt: Date;
 }
@@ -30,6 +36,9 @@ export function initPlaylistItem(sequelize: Sequelize): void {
         allowNull: true,
         comment: "Horário de execução HH:MM:SS",
       },
+      vinheta_url: { type: DataTypes.TEXT, allowNull: true },
+      vinheta_duracao: { type: DataTypes.INTEGER, allowNull: true },
+      vinheta_titulo: { type: DataTypes.STRING(500), allowNull: true },
     },
     {
       sequelize,

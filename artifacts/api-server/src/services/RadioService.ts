@@ -2,6 +2,7 @@ import { Op } from "sequelize";
 import { Content, Schedule, Channel, ContentChannel } from "../models/index.js";
 import { scheduleService } from "./ScheduleService.js";
 import { playlistService } from "./PlaylistService.js";
+import { gradeProgramasService } from "../modules/grade-programas/grade-programas.service.js";
 import { logger } from "../lib/logger.js";
 import { redis } from "../config/redis.js";
 import { env } from "../config/env.js";
@@ -37,8 +38,11 @@ export class RadioService {
       const track = await playlistService.getCurrentTrack(effectiveChannelId);
       if (track) {
         const content = (track as unknown as { content: Content | null }).content;
-        const channel = await Channel.findByPk(effectiveChannelId);
-        result = { current: content, schedule: null, channel, startedAt: track.hora_execucao ?? undefined, source: "playlist" };
+        const [channel, activeBlock] = await Promise.all([
+          Channel.findByPk(effectiveChannelId),
+          this.findActiveBlock(effectiveChannelId),
+        ]);
+        result = { current: content, schedule: activeBlock as unknown as Schedule | null, channel, startedAt: track.hora_execucao ?? undefined, source: "playlist" };
 
         try { await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result)); } catch { /* ignore */ }
         return result;
@@ -129,6 +133,37 @@ export class RadioService {
 
   async getDaySchedule(channelId?: number): Promise<Schedule[]> {
     return scheduleService.getTodaySchedule(channelId ?? env.defaultChannelId);
+  }
+
+  /**
+   * Returns the grade_programas block that is currently active for the
+   * given channel, or null if no block covers the current UTC time.
+   * Handles midnight-crossing blocks (e.g. 22:00–00:00) correctly.
+   */
+  private async findActiveBlock(channelId: number): Promise<object | null> {
+    try {
+      const now = new Date();
+      const date = now.toISOString().split("T")[0]!;
+      const timeStr = [
+        String(now.getUTCHours()).padStart(2, "0"),
+        String(now.getUTCMinutes()).padStart(2, "0"),
+        String(now.getUTCSeconds()).padStart(2, "0"),
+      ].join(":");
+
+      const schedule = await gradeProgramasService.getPublicDaySchedule(channelId, date);
+
+      return (
+        schedule.find((s) => {
+          // Midnight-crossing block (e.g. 22:00–00:00): horario_fim <= horario_inicio
+          if (s.horario_fim <= s.horario_inicio) {
+            return timeStr >= s.horario_inicio || timeStr < s.horario_fim;
+          }
+          return timeStr >= s.horario_inicio && timeStr < s.horario_fim;
+        }) ?? null
+      );
+    } catch {
+      return null;
+    }
   }
 
   async invalidateCache(channelId?: number): Promise<void> {
