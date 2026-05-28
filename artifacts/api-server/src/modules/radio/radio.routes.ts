@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { authenticate, requireAdmin } from "../../middlewares/auth.js";
-import { getCurrent, getNext, getSchedule, getQueue, regenerate } from "./radio.controller.js";
+import { getCurrent, getNext, getSchedule, getQueue, regenerate, forceRemixAll } from "./radio.controller.js";
 
 /**
  * @swagger
@@ -91,5 +91,51 @@ router.get("/queue", getQueue);
  *         description: Resultado da regeneração
  */
 router.post("/regenerate", requireAdmin, regenerate);
+
+/**
+ * @swagger
+ * /api/radio/force-remix-all:
+ *   post:
+ *     tags: [Rádio]
+ *     summary: Força re-mix de todos os conteúdos spoken sem mixed_audio_url (admin)
+ *     description: >
+ *       Itera todos os playlist_items do canal/data que têm conteúdo spoken
+ *       (oracao, reflexao, mensagem, versiculo) com audio_url definido mas
+ *       mixed_audio_url ainda nulo, e dispara o mix síncronamente via ffmpeg.
+ *       Retorna { processed, failed, skipped, errors[] }.
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [channel_id]
+ *             properties:
+ *               channel_id:
+ *                 type: integer
+ *                 example: 1
+ *               date:
+ *                 type: string
+ *                 example: "2026-05-28"
+ *                 description: "Data YYYY-MM-DD (padrão: hoje)"
+ *     responses:
+ *       200:
+ *         description: Resultado do re-mix
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success: { type: boolean }
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     processed: { type: integer }
+ *                     failed:    { type: integer }
+ *                     skipped:   { type: integer }
+ *                     errors:    { type: array, items: { type: string } }
+ */
+router.post("/force-remix-all", requireAdmin, forceRemixAll);
 
 export default router;

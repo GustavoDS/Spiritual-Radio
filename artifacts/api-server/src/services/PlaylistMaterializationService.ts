@@ -222,26 +222,54 @@ export class PlaylistMaterializationService {
 
   /**
    * Fire-and-forget: generate mixed_audio_url for each spoken-type content
-   * that still lacks it.  Runs sequentially to avoid saturating ffmpeg/upload.
+   * that still lacks it.  Refetches Content from the DB so we always use the
+   * raw audio_url (never the already-mixed URL) and skip items that already
+   * have a mix.  Runs sequentially to avoid saturating ffmpeg/upload.
    * Never throws — errors are logged as warnings.
    */
   private async _triggerAsyncMixes(items: ResolvedItem[]): Promise<void> {
+    // Collect unique spoken content IDs
     const seen = new Set<number>();
-    const toMix = items.filter((i) => {
-      if (!SPOKEN_TYPES.has(i.tipo) || !i.audio_url || seen.has(i.content_id)) return false;
-      seen.add(i.content_id);
-      return true;
+    const spokenIds: number[] = [];
+    for (const i of items) {
+      if (SPOKEN_TYPES.has(i.tipo) && i.content_id != null && !seen.has(i.content_id)) {
+        seen.add(i.content_id);
+        spokenIds.push(i.content_id);
+      }
+    }
+    if (spokenIds.length === 0) return;
+
+    // Refetch from DB: only items that have raw audio_url but no mix yet
+    const pending = await Content.findAll({
+      where: ({
+        id: { [Op.in]: spokenIds },
+        audio_url: { [Op.not]: null },
+        mixed_audio_url: null,
+      }) as Record<string, unknown>,
+      attributes: ["id", "tipo", "audio_url", "mixed_audio_url", "background_track_id"],
     });
 
-    for (const item of toMix) {
+    if (pending.length === 0) return;
+
+    logger.info("PlaylistMaterializationService: queuing async mixes", { count: pending.length });
+
+    for (const content of pending) {
       await backgroundTrackMixService
-        .resolveAudioUrl({ id: item.content_id, tipo: item.tipo, audio_url: item.audio_url })
+        .resolveAudioUrl({
+          id: content.id,
+          tipo: content.tipo,
+          audio_url: content.audio_url,
+          mixed_audio_url: content.mixed_audio_url ?? null,
+          background_track_id: (content as unknown as { background_track_id?: string | null }).background_track_id ?? null,
+        })
         .catch((err) =>
           logger.warn("PlaylistMaterializationService: async mix failed", {
-            contentId: item.content_id, err: (err as Error).message,
+            contentId: content.id, err: (err as Error).message,
           }),
         );
     }
+
+    logger.info("PlaylistMaterializationService: async mixes done", { processed: pending.length });
   }
 
   /**

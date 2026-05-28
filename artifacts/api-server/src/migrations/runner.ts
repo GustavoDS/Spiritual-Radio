@@ -706,6 +706,37 @@ const migrations = [
   },
 
   {
+    name: "29-background-track-settings-seed",
+    async up({ context: qi }: Ctx) {
+      // Ensure all 4 spoken types have settings.
+      // reflexao → default_category = 'oracao' (reuses oracao tracks as fallback)
+      // mensagem → default_category = 'oracao'
+      // versiculo → default_category = 'versiculo'
+      // oracao stays as-is (already seeded at app startup)
+      await sql(qi, `
+        INSERT INTO background_track_settings (content_type, enabled, volume_base, ducking_db, fade_in_ms, fade_out_ms, default_category)
+        VALUES
+          ('oracao',    true, 0.30, -18, 1500, 2000, 'oracao'),
+          ('reflexao',  true, 0.20, -18, 1500, 2000, 'oracao'),
+          ('mensagem',  true, 0.20, -18, 1500, 2000, 'oracao'),
+          ('versiculo', true, 0.15, -18, 1000, 1500, 'versiculo')
+        ON CONFLICT (content_type) DO UPDATE
+          SET default_category = EXCLUDED.default_category,
+              enabled          = EXCLUDED.enabled;
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        DELETE FROM background_track_settings
+        WHERE content_type IN ('mensagem', 'versiculo');
+        UPDATE background_track_settings
+          SET default_category = NULL
+          WHERE content_type = 'reflexao';
+      `);
+    },
+  },
+
+  {
     name: "28-playlist-items-add-vinheta-columns",
     async up({ context: qi }: Ctx) {
       await sql(qi, `

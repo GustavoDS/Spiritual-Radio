@@ -1,9 +1,12 @@
 import type { Request, Response } from "express";
+import { Op } from "sequelize";
 import { radioService } from "../../services/RadioService.js";
 import { vinhetaInjectionService } from "../../services/VinhetaInjectionService.js";
 import { playlistMaterializationService } from "../../services/PlaylistMaterializationService.js";
 import { autoDjService } from "../../services/AutoDJService.js";
 import { gradeProgramasService } from "../grade-programas/grade-programas.service.js";
+import { backgroundTrackMixService } from "../../services/BackgroundTrackMixService.js";
+import { PlaylistItem, Playlist, Content } from "../../models/index.js";
 import { ok } from "../../utils/response.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
 import { env } from "../../config/env.js";
@@ -66,6 +69,77 @@ export async function getQueue(req: Request, res: Response): Promise<void> {
 
   const result = await vinhetaInjectionService.buildQueue(channelId, date);
   ok(res, result);
+}
+
+const SPOKEN_TYPES = new Set(["oracao", "reflexao", "mensagem", "versiculo"]);
+
+/**
+ * POST /api/radio/force-remix-all
+ *
+ * Itera TODOS os playlist_items do canal/data que têm conteúdo spoken sem
+ * mixed_audio_url e dispara o mix síncronamente.
+ * Útil para forçar re-processamento após falha ou configuração nova.
+ *
+ * Body: { channel_id: number, date?: string }
+ * Returns: { processed, failed, errors[] }
+ */
+export async function forceRemixAll(req: Request, res: Response): Promise<void> {
+  const body = req.body as { channel_id?: unknown; date?: unknown };
+
+  const channelId = Number(body.channel_id);
+  if (!Number.isFinite(channelId) || channelId <= 0) {
+    throw new HttpError("channel_id é obrigatório e deve ser um inteiro positivo", 400);
+  }
+
+  const date = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date)
+    ? body.date
+    : new Date().toISOString().slice(0, 10);
+
+  // 1. Find playlist for the channel/date
+  const playlist = await Playlist.findOne({ where: { channel_id: channelId, data: date } });
+  if (!playlist) {
+    throw new HttpError(`Nenhuma playlist encontrada para canal ${channelId} em ${date}. Execute /api/radio/regenerate primeiro.`, 404);
+  }
+
+  // 2. Find all spoken content IDs in this playlist
+  const items = await PlaylistItem.findAll({
+    where: { playlist_id: playlist.id, content_id: { [Op.not]: null } },
+    attributes: ["content_id"],
+  });
+
+  const uniqueIds = [...new Set(items.map((i) => i.content_id as number).filter(Boolean))];
+
+  // 3. Fetch spoken contents that have audio_url but no mixed_audio_url yet
+  const pending = await Content.findAll({
+    where: ({
+      id: { [Op.in]: uniqueIds },
+      tipo: { [Op.in]: [...SPOKEN_TYPES] },
+      audio_url: { [Op.not]: null },
+      mixed_audio_url: null,
+    }) as Record<string, unknown>,
+    attributes: ["id", "tipo", "audio_url", "mixed_audio_url", "background_track_id"],
+  });
+
+  const results = { processed: 0, failed: 0, skipped: uniqueIds.length - pending.length, errors: [] as string[] };
+
+  // 4. Process synchronously so the caller sees the full result
+  for (const content of pending) {
+    try {
+      await backgroundTrackMixService.resolveAudioUrl({
+        id: content.id,
+        tipo: content.tipo,
+        audio_url: content.audio_url,
+        mixed_audio_url: content.mixed_audio_url ?? null,
+        background_track_id: (content as unknown as { background_track_id?: string | null }).background_track_id ?? null,
+      });
+      results.processed++;
+    } catch (err) {
+      results.failed++;
+      results.errors.push(`content_id=${content.id}: ${(err as Error).message}`);
+    }
+  }
+
+  ok(res, results, `Re-mix concluído para canal ${channelId} em ${date}: ${results.processed} processados, ${results.failed} falhas, ${results.skipped} já tinham mix`);
 }
 
 /**

@@ -1,0 +1,90 @@
+CONTEXTO
+Após rodar as migrations de vinheta_url e mixed_audio_url, o player está com 3 bugs críticos confirmados via validação direta do live.m3u8 e now-playing.json:
+
+1. Orações tocam SEM fundo musical (TTS puro, sem remix)
+2. NENHUMA vinheta está sendo injetada na playlist
+3. Player "pula" de uma oração nova para a anterior do nada (manifesto com segmentos expirados/duplicados)
+
+EVIDÊNCIAS COLETADAS DO BACKEND EM PRODUÇÃO
+
+a) live.m3u8 do channel_id=1 contém APENAS URLs tts-*.mp3 para orações/reflexões/mensagens/versículos. Zero ocorrências de bg-mixed-*.mp3.
+
+b) now-playing.json retorna current.audioUrl = tts-*.mp3 e mixed_audio_url = null para 100% dos itens spoken.
+
+c) Query de validação:
+   SELECT id, tipo, audio_url, mixed_audio_url, vinheta_url, started_at, ends_at
+   FROM playlist_items
+   WHERE channel_id = 1
+   ORDER BY started_at DESC LIMIT 50;
+
+   Resultado esperado e ATUAL: mixed_audio_url e vinheta_url = NULL em todos os registros materializados após a migration.
+
+d) Logs de ResolveService mostram materialização rodando normalmente (items: 75/35/100/80, vazio_sec variando) — ou seja, a materialização ESTÁ ocorrendo, mas SEM disparar os mixes nem injetar vinhetas.
+
+ANÁLISE DA CAUSA RAIZ (PROVÁVEL)
+
+Você afirmou no fix do Bug 1 que materializeDay() agora chama _triggerAsyncMixes() fire-and-forget no final, iterando por oracao/reflexao/mensagem/versiculo e chamando BackgroundTrackMixService.resolveAudioUrl().
+
+PORÉM, na prática NADA disso está acontecendo. Hipóteses a investigar:
+
+H1. _triggerAsyncMixes() está sendo chamado mas falhando silenciosamente (fire-and-forget engole o erro). Adicione try/catch com logger.error explícito e teste rodando manualmente.
+
+H2. BackgroundTrackMixService.resolveAudioUrl() está retornando undefined/null sem persistir no banco. Confirme que existe UPDATE playlist_items SET mixed_audio_url = ? WHERE id = ? após a resolução.
+
+H3. A injeção de vinhetas (usa_vinheta_automatica) nunca foi implementada — só a coluna foi criada. Confirme se existe um VinhetaInjectionService sendo chamado dentro de materializeDay().
+
+H4. O AutoDJService/HLS generator usa content.audio_url diretamente em vez de content.mixed_audio_url ?? content.audio_url ao construir o live.m3u8. Confirme grep no código que monta o manifest.
+
+H5. A ResolveService está reusando playlist_items antigos (materializados pré-migration) sem re-disparar a geração de mix. Adicione uma flag para forçar re-mix em itens com mixed_audio_url IS NULL.
+
+O QUE PRECISO QUE VOCÊ FAÇA
+
+1. Rode esta query em produção e me mande o resultado COMPLETO (não resumido):
+   SELECT 
+     COUNT(*) FILTER (WHERE mixed_audio_url IS NOT NULL) AS com_mix,
+     COUNT(*) FILTER (WHERE mixed_audio_url IS NULL) AS sem_mix,
+     COUNT(*) FILTER (WHERE vinheta_url IS NOT NULL) AS com_vinheta,
+     COUNT(*) FILTER (WHERE vinheta_url IS NULL) AS sem_vinheta,
+     tipo
+   FROM playlist_items
+   WHERE channel_id = 1 AND started_at >= NOW() - INTERVAL '1 day'
+   GROUP BY tipo;
+
+2. Logs do servidor durante UMA materialização completa, filtrando por:
+   - "triggerAsyncMixes"
+   - "BackgroundTrackMixService"
+   - "resolveAudioUrl"
+   - "VinhetaInjection" (ou nome equivalente)
+   - "mixed_audio_url"
+   Se não aparecer NADA com esses termos, confirma que o código não está sendo executado.
+
+3. Dispare manualmente para channel_id=1, date=hoje:
+   - materializeDay() forçado
+   - _triggerAsyncMixes() forçado
+   E me mande os logs dessas duas chamadas.
+
+4. Mostre o trecho EXATO do código onde:
+   a) materializeDay() chama _triggerAsyncMixes()
+   b) BackgroundTrackMixService.resolveAudioUrl() faz o UPDATE no banco
+   c) O builder do live.m3u8 escolhe entre mixed_audio_url e audio_url
+   d) A vinheta é injetada como segmento no manifest HLS
+
+5. Implemente (se ainda não existir) um endpoint admin:
+   POST /api/radio/force-remix-all
+   Body: { "channel_id": 1, "date": "2026-05-28" }
+   Que itera por TODOS os playlist_items do dia com mixed_audio_url IS NULL e reprocessa o mix síncronamente, retornando { processed, failed, errors[] }.
+
+CRITÉRIO DE ACEITE
+
+Após o fix, esta query DEVE retornar 0 nas colunas sem_mix para tipos spoken:
+SELECT tipo, COUNT(*) AS sem_mix
+FROM playlist_items
+WHERE channel_id = 1
+  AND mixed_audio_url IS NULL
+  AND tipo IN ('oracao','reflexao','mensagem','versiculo')
+  AND started_at >= NOW() - INTERVAL '1 hour'
+GROUP BY tipo;
+
+E o live.m3u8 DEVE conter URLs bg-mixed-*.mp3 (não tts-*.mp3) para orações, além de segmentos de vinheta antes de cada item com usa_vinheta_automatica = true.
+
+NÃO ME RESPONDA "está funcionando" sem colar o output dessas queries e dos logs. Os fixes anteriores foram declarados como concluídos mas em produção nada mudou.

@@ -12,6 +12,7 @@ import { startAutomationWorker } from "./jobs/automationJob.js";
 import { automationService } from "./services/AutomationService.js";
 import { autoDjService } from "./services/AutoDJService.js";
 import { playlistMaterializationService } from "./services/PlaylistMaterializationService.js";
+import { vinhetasService } from "./modules/vinhetas/vinhetas.service.js";
 import { streamSessionStore } from "./services/StreamSessionStore.js";
 import { scheduleQueue, cleanupQueue } from "./queues/index.js";
 import { Channel, Playlist } from "./models/index.js";
@@ -239,6 +240,14 @@ async function bootstrap(): Promise<void> {
     const MATERIALIZE_INTERVAL_MS = 15 * 60 * 1000;
     const materializeTimer = setInterval(materializeSchedule, MATERIALIZE_INTERVAL_MS);
     if ((materializeTimer as NodeJS.Timeout).unref) (materializeTimer as NodeJS.Timeout).unref();
+
+    // Vinheta TTS: synthesize any vinheta that is missing audio_url.
+    // Fire-and-forget — runs in background via concurrent workers inside the service.
+    void vinhetasService.regenerarTodas(true).then(({ queued }) => {
+      if (queued > 0) logger.info("Vinheta TTS synthesis started at startup", { queued });
+    }).catch(err =>
+      logger.warn("Vinheta TTS startup synthesis failed", { err: (err as Error).message }),
+    );
   } catch (err) {
     logger.warn("Startup service error (app will still run)", { err });
   }
