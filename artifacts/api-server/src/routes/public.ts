@@ -5,7 +5,7 @@ import { submitContact, submitPrayerRequest } from "../modules/messages/messages
 import { radioService } from "../services/RadioService.js";
 import { validateIntegerId } from "../middlewares/validateId.js";
 import { validate } from "../middlewares/validate.js";
-import { contactLimiter } from "../middlewares/rateLimiter.js";
+import { contactLimiter, streamMetadataLimiter, streamManifestLimiter } from "../middlewares/rateLimiter.js";
 import { contactSchema, prayerRequestSchema } from "../modules/messages/messages.validators.js";
 import { getLiveM3u8, getNowPlaying, ping, getPublicPlaylist } from "../modules/stream/stream.controller.js";
 
@@ -32,15 +32,16 @@ router.get("/stream", async (req: Request, res: Response): Promise<void> => {
 });
 
 // HLS streaming — path param form: /public/stream/:channelId/...
-router.get("/stream/ping", ping);
-router.get("/stream/:channelId/live.m3u8", getLiveM3u8);
-router.get("/stream/:channelId/now-playing.json", getNowPlaying);
-router.get("/stream/:channelId/playlist.json", getPublicPlaylist);
+// Each route gets its own rate-limit bucket (A = metadata, B = manifest).
+router.get("/stream/ping", streamMetadataLimiter, ping);
+router.get("/stream/:channelId/live.m3u8", streamManifestLimiter, getLiveM3u8);
+router.get("/stream/:channelId/now-playing.json", streamMetadataLimiter, getNowPlaying);
+router.get("/stream/:channelId/playlist.json", streamMetadataLimiter, getPublicPlaylist);
 
 // HLS streaming — query param form (frontend-friendly):
 //   GET /public/live.m3u8?channel=<id>
 //   GET /public/now-playing.json?channel=<id>
-router.get("/live.m3u8", getLiveM3u8);
-router.get("/now-playing.json", getNowPlaying);
+router.get("/live.m3u8", streamManifestLimiter, getLiveM3u8);
+router.get("/now-playing.json", streamMetadataLimiter, getNowPlaying);
 
 export default router;

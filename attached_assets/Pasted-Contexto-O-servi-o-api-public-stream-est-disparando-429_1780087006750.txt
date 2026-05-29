@@ -1,0 +1,46 @@
+Contexto: O serviço /api/public/stream/* está disparando 429 (Too Many Requests)
+para 1 único ouvinte do player web. O frontend já foi ajustado para reduzir
+~70% das chamadas (poll de now-playing 5s→15s, coalesce de 2s em bursts de SSE,
+remoção de retries em rajada). Mesmo assim, o limiter atual continua arriscado
+porque HLS é, por design, um protocolo "chatty" e múltiplos ouvintes atrás do
+mesmo NAT/IP (escola, empresa, Cloudflare) somam no mesmo bucket.
+
+Pedidos de ajuste no backend:
+
+1) Separar buckets do rate limiter por categoria de rota, em vez de um
+   bucket global por IP:
+     - bucket A "metadata"   → /now-playing.json, /events, /ping
+     - bucket B "manifest"   → /live.m3u8
+     - bucket C "media"      → segmentos .ts/.aac/.mp4
+   Sugerido:
+     A: 120 req/min/IP
+     B: 240 req/min/IP   (HLS recarrega o manifest a cada targetDuration)
+     C: sem rate limit ou >= 1200 req/min/IP   (CDN/cache cuida)
+
+2) Para players atrás de NAT (Cloudflare, proxies corporativos), idealmente
+   usar IP + token de sessão (X-AutoDJ-Session ou o token de /ping) como
+   chave do bucket, em vez de só IP. Assim 50 alunos numa mesma escola não
+   se anulam.
+
+3) Sempre devolver o header `Retry-After` (em segundos) junto do 429.
+   O frontend já lê e respeita esse header — sem ele, ele usa um default
+   conservador de 90s e o usuário fica mais tempo offline do que precisaria.
+
+4) Considerar mover /live.m3u8 e segmentos para um caminho cacheável por
+   CDN (Cache-Control: public, max-age = targetDuration), com bypass do
+   rate limit em hits de cache. Isso elimina o problema na origem.
+
+5) Logar, quando devolver 429, qual bucket disparou e qual o IP/sessão —
+   ajuda a calibrar os tetos sem ficar no chute.
+
+Detalhes do tráfego esperado por ouvinte após o fix de frontend:
+  - ping:               ~2 req/min
+  - now-playing.json:   ~4 req/min (1 poll a cada 15s, sem bursts SSE)
+  - events (SSE):       1 conexão persistente; reconnect só em queda
+  - live.m3u8:          conforme targetDuration do manifest (geralmente 10–30/min)
+  - segmentos:          contínuo, depende da duração do segmento
+
+Critério de pronto:
+  - 1 ouvinte abrindo o player não recebe 429 em nenhuma rota por 30 min
+  - 10 ouvintes simultâneos no mesmo IP não disparam 429 em /now-playing
+    nem em /live.m3u8
