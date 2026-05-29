@@ -64,7 +64,41 @@ export class StreamSessionStore {
 
   /* ── Session management ─────────────────────────────────────────────── */
 
+  /**
+   * Returns an existing live session for the same (channelId, ip, userAgent)
+   * fingerprint, or null if none found / all expired.
+   * This prevents HLS manifest polling (every few seconds) from inflating the
+   * listener count and the sessions table.
+   */
+  private findByFingerprint(channelId: number, ip: string, userAgent: string): StreamSession | null {
+    const cutoff = Date.now() - SESSION_TIMEOUT_MS;
+    for (const session of this.sessions.values()) {
+      if (
+        session.channelId === channelId &&
+        session.ip === ip &&
+        session.userAgent === userAgent &&
+        session.lastPingAt.getTime() >= cutoff
+      ) {
+        return session;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Returns an existing live session for the same client fingerprint if one
+   * exists (and refreshes its lastPingAt), or creates a new session otherwise.
+   * Prevents the listener counter from inflating when a single browser polls
+   * /live.m3u8 every few seconds.
+   */
   create(channelId: number, ip: string, userAgent: string): StreamSession {
+    const existing = this.findByFingerprint(channelId, ip, userAgent);
+    if (existing) {
+      existing.lastPingAt = new Date();
+      logger.debug("StreamSessionStore: session reused", { token: existing.token.slice(0, 8), channelId, ip });
+      return existing;
+    }
+
     const token = crypto.randomUUID();
     const now = new Date();
     const session: StreamSession = {

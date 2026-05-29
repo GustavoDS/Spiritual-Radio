@@ -3,6 +3,7 @@ import { ok, notFound } from "../../utils/response.js";
 import { autoDjService } from "../../services/AutoDJService.js";
 import { streamSessionStore } from "../../services/StreamSessionStore.js";
 import { Channel } from "../../models/index.js";
+import { logger } from "../../lib/logger.js";
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -52,6 +53,12 @@ export async function getLiveM3u8(req: Request, res: Response): Promise<void> {
 
   // ── Offline: 204 so hls.js stops polling and treats as offline ────────
   if (!nowPlaying.isPlaying) {
+    logger.debug("stream/live.m3u8: offline — returning 204", {
+      channelId,
+      offlineReason: nowPlaying.offlineReason,
+      nextStartsAt: nowPlaying.nextStartsAt,
+      computedNow: new Date().toISOString(),
+    });
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.setHeader("X-Offline-Reason", nowPlaying.offlineReason ?? "no_schedule");
     if (nowPlaying.nextStartsAt) res.setHeader("X-Next-Starts-At", nowPlaying.nextStartsAt);
@@ -71,6 +78,20 @@ export async function getLiveM3u8(req: Request, res: Response): Promise<void> {
   const targetDuration = tracks.length > 0
     ? Math.ceil(Math.max(...tracks.map((t) => t.duracao || 300)))
     : 300;
+
+  logger.debug("stream/live.m3u8: serving manifest", {
+    channelId,
+    sessionToken: session.token.slice(0, 8),
+    currentId: nowPlaying.current?.contentId ?? null,
+    currentTitulo: nowPlaying.current?.titulo ?? null,
+    progressSec: nowPlaying.progressSec,
+    remainingSec: nowPlaying.remainingSec,
+    queueSize: tracks.length,
+    targetDuration,
+    startedAt: nowPlaying.startedAt,
+    endsAt: nowPlaying.endsAt,
+    computedNow: new Date().toISOString(),
+  });
 
   const lines: string[] = [
     "#EXTM3U",
@@ -118,6 +139,21 @@ export async function getNowPlaying(req: Request, res: Response): Promise<void> 
   const np = autoDjService.getNowPlaying(channelId);
   corsHeaders(res);
   res.setHeader("Cache-Control", "no-cache");
+
+  logger.debug("stream/now-playing: response", {
+    channelId,
+    isPlaying: np.isPlaying,
+    currentId: np.current?.contentId ?? null,
+    currentTitulo: np.current?.titulo ?? null,
+    progressSec: np.progressSec,
+    remainingSec: np.remainingSec,
+    startedAt: np.startedAt,
+    endsAt: np.endsAt,
+    offlineReason: np.offlineReason ?? null,
+    nextStartsAt: np.nextStartsAt ?? null,
+    queueSize: np.upNext.length + (np.current ? 1 : 0) + (np.next ? 1 : 0),
+    computedNow: new Date().toISOString(),
+  });
 
   // Shape the response matching the frontend contract
   ok(res, {

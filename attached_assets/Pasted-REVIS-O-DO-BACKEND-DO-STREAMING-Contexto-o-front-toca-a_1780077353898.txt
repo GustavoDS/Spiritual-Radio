@@ -1,0 +1,25 @@
+REVISÃO DO BACKEND DO STREAMING
+
+Contexto: o front toca a fila ao vivo por /api/public/stream/{channelId}/live.m3u8 e usa /api/public/stream/{channelId}/now-playing.json apenas para metadata/status. Foram observados cortes, repetições, reinícios, pulos inesperados e momentos em que o front mostra “fora do ar”.
+
+Evidências observadas no preview:
+1. /now-playing.json retornou isPlaying=false, current=null, next=null, offlineReason="no_schedule" às 17:31:54, mesmo com uma música programada em andamento entre 17:29:46 e 17:35:22.
+2. Pouco depois, /now-playing.json voltou a retornar a mesma música em andamento com progressSec avançado. Isso sugere falso offline/janela de rematerialização no backend, não ausência real de grade.
+3. Cada GET em /live.m3u8 retorna um novo X-AutoDJ-Session. Revisar se isso cria múltiplas sessões/listeners indevidos, invalida estado, altera fila ou interfere no keepalive.
+4. O manifest atual vem com um único #EXT-X-PROGRAM-DATE-TIME no começo e vários #EXTINF subsequentes. Confirmar que as datas inferidas permanecem corretas e que o manifest não é trocado por uma fila diferente durante músicas longas.
+
+Pontos para revisar/corrigir no backend:
+- Garantir que now-playing nunca retorne no_schedule quando existe bloco vigente na grade/fila materializada. Se a fila estiver sendo recalculada, manter o último current válido até a nova fila ficar pronta.
+- Tornar a rematerialização da fila atômica: calcular nova playlist em buffer/estrutura temporária e só substituir o estado publicado quando estiver completa.
+- Revisar transições entre segmentos curtos (vinheta 4–5s, oração/reflexão 15–20s) para não criar buracos de 1–5s nem pular para o próximo por arredondamento de horário.
+- Revisar cálculo de progressSec/remainingSec com relógio monotônico ou timezone consistente; não depender de Date.now divergente entre workers/processos sem tolerância.
+- Validar duração real dos arquivos MP3 contra a duração gravada no banco/manifest. Se a duração real for menor/maior, o browser dispara ended antes/depois e causa pulos, cortes ou sobreposição de metadata.
+- Revisar headers dos arquivos de áudio no storage: Accept-Ranges, Content-Length, Content-Type audio/mpeg, CORS, cache-control. Falhas de range podem causar recomeços/engasgos no elemento audio.
+- Revisar se GET /live.m3u8 deve criar sessão nova sempre ou reutilizar por token/cookie/query. Se sempre criar, evitar que polling/preload do front infle listeners ou altere estado do AutoDJ.
+- Adicionar logs estruturados em now-playing/live.m3u8: channelId, queueVersion, currentId, currentStart, currentEnd, computedNow, progressSec, reason para offline, quantidade de itens da fila e se estava rematerializando.
+- Adicionar teste/simulação com blocos: música longa -> vinheta 5s -> oração 15s -> vinheta 4s -> versículo 20s -> música, validando que now-playing e live.m3u8 permanecem consistentes segundo a linha do tempo.
+
+Resultado esperado:
+- now-playing não deve oscilar para no_schedule durante programação vigente.
+- live.m3u8 deve preservar sequência e horários sem resetar a faixa atual.
+- O backend deve expor logs claros quando decidir ficar offline ou pular segmento, para diferenciar problema real de front/rede.

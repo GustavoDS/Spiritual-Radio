@@ -140,6 +140,28 @@ export class AutoDJService {
   private states = new Map<number, ChannelDJState>();
   private watcher: NodeJS.Timeout | null = null;
   private isWatcherRunning = false;
+  /**
+   * Channels currently being rematerialised by PlaylistMaterializationService.
+   * While in this set the tick is forbidden from calling setOffline() with
+   * "no_schedule" — the playlist table is temporarily empty and we do NOT want
+   * to flip the channel offline and broadcast `radio_offline` to listeners.
+   */
+  private rematerializingChannels = new Set<number>();
+
+  /**
+   * Called by PlaylistMaterializationService before it wipes + rebuilds the
+   * playlist_items rows so the watcher doesn't misread the empty window as a
+   * genuine schedule gap.
+   */
+  setRematerializing(channelId: number, active: boolean): void {
+    if (active) {
+      this.rematerializingChannels.add(channelId);
+      logger.debug("AutoDJService: rematerialisation started — watcher offline-guard ON", { channelId });
+    } else {
+      this.rematerializingChannels.delete(channelId);
+      logger.debug("AutoDJService: rematerialisation complete — watcher offline-guard OFF", { channelId });
+    }
+  }
 
   /* ── State ──────────────────────────────────────────────────────────── */
 
@@ -291,6 +313,18 @@ export class AutoDJService {
           audio_url: currentItem.content?.audio_url,
           mixed_audio_url: currentItem.content?.mixed_audio_url,
         });
+      }
+      // Guard: if PlaylistMaterializationService is actively rebuilding the playlist
+      // (destroy + bulkCreate window), the table is momentarily empty. Do NOT flip
+      // the channel offline — keep the last-known playing state until the rebuild
+      // completes and the next tick finds rows again.
+      if (reason === "no_schedule" && this.rematerializingChannels.has(channelId)) {
+        logger.debug("AutoDJService: skipping no_schedule offline — rematerialisation in progress", {
+          channelId,
+          nowStr,
+          isPlaying: state.isPlaying,
+        });
+        return;
       }
       this.setOffline(channelId, state, reason, nextStartsAt, pendingNext);
       return;

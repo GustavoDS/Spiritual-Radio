@@ -3,6 +3,7 @@ import { Playlist, PlaylistItem, Channel, Content } from "../models/index.js";
 import { gradeProgramasService } from "../modules/grade-programas/grade-programas.service.js";
 import { vinhetasService } from "../modules/vinhetas/vinhetas.service.js";
 import { backgroundTrackMixService } from "./BackgroundTrackMixService.js";
+import { autoDjService } from "./AutoDJService.js";
 import { logger } from "../lib/logger.js";
 import type { ResolvedItem } from "./ResolveService.js";
 
@@ -129,8 +130,16 @@ export class PlaylistMaterializationService {
       defaults: { channel_id: channelId, data: date } as Parameters<typeof Playlist.create>[0],
     });
 
-    // 2. Full rebuild — delete all existing items for this playlist
-    await PlaylistItem.destroy({ where: { playlist_id: playlist.id } });
+    // 2. Full rebuild — delete all existing items for this playlist.
+    // Signal AutoDJService BEFORE destroying rows so the watcher doesn't
+    // misinterpret the empty-table window as a genuine "no_schedule" gap.
+    autoDjService.setRematerializing(channelId, true);
+    try {
+      await PlaylistItem.destroy({ where: { playlist_id: playlist.id } });
+    } catch (err) {
+      autoDjService.setRematerializing(channelId, false);
+      throw err;
+    }
 
     // 3. Resolve all grade_programas blocks (includes block metadata)
     const dayResult = await gradeProgramasService.resolveDay(channelId, date);
@@ -247,9 +256,14 @@ export class PlaylistMaterializationService {
       }
     }
 
-    // 6. Persist all rows in one batch
-    if (rows.length > 0) {
-      await PlaylistItem.bulkCreate(rows as Parameters<typeof PlaylistItem.bulkCreate>[0]);
+    // 6. Persist all rows in one batch, then clear the rematerialising guard
+    try {
+      if (rows.length > 0) {
+        await PlaylistItem.bulkCreate(rows as Parameters<typeof PlaylistItem.bulkCreate>[0]);
+      }
+    } finally {
+      // Always release the guard so the watcher resumes normal offline detection
+      autoDjService.setRematerializing(channelId, false);
     }
 
     logger.info("PlaylistMaterializationService: materialized", {
