@@ -1,0 +1,95 @@
+Tarefa: criar endpoint para extrair e popular `duracao` das músicas
+
+CONTEXTO
+--------
+Temos 184 registros em `contents` com `tipo='musica'` que possuem `audio_url`
+(arquivos MP3 hospedados em R2/Cloudflare) mas com `duracao` NULL ou 0.
+O resolver de grade (`/api/grade-programas/resolve-day`) filtra por
+`duracao > 0`, então essas músicas nunca entram no pool e os blocos de música
+ficam vazios.
+
+Confirmação via SQL:
+  SELECT COUNT(*) FROM contents
+   WHERE tipo='musica' AND audio_url IS NOT NULL AND (duracao IS NULL OR duracao=0);
+  -- retorna 184
+
+OBJETIVO
+--------
+Criar endpoint admin que baixa cada `audio_url`, extrai a duração real do MP3
+e popula a coluna `duracao` (em segundos, inteiro).
+
+ENDPOINT
+--------
+POST /api/admin/contents/refresh-durations
+
+Query params (opcionais):
+  - tipo      : filtra por tipo (ex: 'musica'). Default: todos.
+  - channel_id: filtra só conteúdos do canal (M:N via content_channels OR
+                contents.channel_id).
+  - force     : se true, recalcula mesmo de quem já tem duracao>0.
+                Default: false (só processa NULL/0).
+  - limit     : máximo de itens por execução. Default: 500.
+
+Auth: middleware admin (mesmo dos outros /api/admin/*).
+
+Response:
+{
+  "processed": 184,
+  "updated":   182,
+  "failed":    2,
+  "skipped":   0,
+  "errors": [
+    { "id": 123, "audio_url": "...", "error": "HTTP 404" }
+  ]
+}
+
+IMPLEMENTAÇÃO SUGERIDA (Node)
+-----------------------------
+Usar `music-metadata` (puro JS, não precisa de ffmpeg binário no servidor):
+
+  npm i music-metadata
+
+  import { parseStream } from 'music-metadata';
+  import fetch from 'node-fetch'; // ou global fetch no Node 18+
+
+  async function getDurationFromUrl(url) {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const meta = await parseStream(res.body, {
+      mimeType: res.headers.get('content-type') ?? 'audio/mpeg',
+      size: Number(res.headers.get('content-length')) || undefined,
+    }, { duration: true });
+    return Math.round(meta.format.duration ?? 0);
+  }
+
+Alternativa com ffprobe (se já estiver instalado):
+  ffprobe -v error -show_entries format=duration -of csv=p=0 <url>
+
+LOOP
+----
+- Buscar contents do filtro com SELECT ... LIMIT :limit
+- Processar em paralelo com concorrência controlada (ex: p-limit, 5 simultâneos)
+- UPDATE contents SET duracao = :seconds WHERE id = :id
+- Logar falhas mas não abortar o batch
+- Retornar o resumo
+
+VALIDAÇÃO PÓS-DEPLOY
+--------------------
+1. Rodar: POST /api/admin/contents/refresh-durations?tipo=musica
+2. Conferir:
+     SELECT COUNT(*) FROM contents
+      WHERE tipo='musica' AND duracao > 0;
+   Deve retornar ~184.
+3. Rodar novamente: POST /api/grade-programas/resolve-day
+   { "date":"2026-05-29", "channel_id": 1 }
+   Esperado: blocks[].counts.musica > 0 e pool_warnings sem
+   "tipo=musica: pool vazio".
+
+EXTRA (recomendado)
+-------------------
+Chamar essa rotina automaticamente após:
+- Upload de novo conteúdo de áudio
+- Bulk upload
+- Importação via URL
+Assim novos itens já entram no banco com `duracao` populada e não recriamos
+esse bug no futuro.

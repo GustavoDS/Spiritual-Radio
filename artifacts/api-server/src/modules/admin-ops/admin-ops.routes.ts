@@ -11,6 +11,7 @@ import {
   getSystemHealth,
   generateContentTts,
   getStorageStatus,
+  refreshDurations,
 } from "./admin-ops.controller.js";
 import {
   runNowSchema,
@@ -30,5 +31,6 @@ router.get("/system/health", getSystemHealth);
 router.get("/storage/status", getStorageStatus);
 
 router.post("/contents/:id/generate-tts", adminOpsLimiter, validate(generateTtsSchema), generateContentTts);
+router.post("/contents/refresh-durations", adminOpsLimiter, refreshDurations);
 
 export default router;

@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import { Op } from "sequelize";
 import { ok, created, badRequest } from "../../utils/response.js";
 import { logger } from "../../lib/logger.js";
+import { extractAudioDurationFromUrl } from "../../utils/audio-duration.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
 import { messageService } from "../messages/messages.service.js";
 import { playlistService } from "../../services/PlaylistService.js";
@@ -347,6 +348,117 @@ export async function getStorageStatus(_req: Request, res: Response): Promise<vo
     },
     checkedAt: new Date().toISOString(),
   });
+}
+
+/* ─── Contents refresh-durations ───────────────────────────────────────── */
+
+interface RefreshDurationsError {
+  id: number;
+  audio_url: string;
+  error: string;
+}
+
+/**
+ * POST /api/admin/contents/refresh-durations
+ *
+ * Streams every qualifying audio_url, extracts duration via music-metadata
+ * and writes it back to contents.duracao.  Runs with capped concurrency so
+ * it does not slam the origin (R2/S3/local).
+ *
+ * Query params:
+ *   tipo       – filter by content tipo (default: all)
+ *   channel_id – filter by channel (M:N + legacy FK)
+ *   force      – "true" recalculates even when duracao > 0 (default: false)
+ *   limit      – max items per run (default: 500)
+ */
+export async function refreshDurations(req: Request, res: Response): Promise<void> {
+  const tipo       = req.query["tipo"]       as string | undefined;
+  const channelId  = req.query["channel_id"] ? Number(req.query["channel_id"]) : undefined;
+  const force      = req.query["force"] === "true";
+  const limit      = Math.min(Number(req.query["limit"]) || 500, 2000);
+  const CONCURRENCY = 5;
+
+  const adminId = (req as Request & { user?: { id: number } }).user?.id;
+
+  // Build WHERE clause — assembled once, cast to unknown for Sequelize's loose typings
+  const baseWhere = {
+    audio_url: { [Op.not]: null },
+    ...(tipo ? { tipo } : {}),
+    ...(!force ? { duracao: { [Op.or]: [null, 0] } } : {}),
+    ...(channelId !== undefined
+      ? {
+          [Op.or]: [
+            { "$channels.id$": channelId },
+            { channel_id: channelId },
+          ],
+        }
+      : {}),
+  };
+
+  // Channel filter — LEFT JOIN so legacy channel_id rows also pass the Op.or above
+  const includeOpts = channelId !== undefined
+    ? [{
+        model: Channel,
+        as: "channels",
+        required: false,
+        through: { attributes: [] },
+        attributes: [],
+      }]
+    : [];
+
+  const rows = await Content.findAll({
+    where: baseWhere as Record<string, unknown>,
+    include: includeOpts,
+    attributes: ["id", "audio_url"],
+    limit,
+    order: [["id", "ASC"]],
+  });
+
+  logger.info("admin: refresh-durations started", {
+    tipo, channelId, force, limit, found: rows.length, adminId,
+  });
+
+  let updated = 0;
+  let failed  = 0;
+  let skipped = 0;
+  const errors: RefreshDurationsError[] = [];
+
+  // Process in batches of CONCURRENCY
+  for (let i = 0; i < rows.length; i += CONCURRENCY) {
+    const batch = rows.slice(i, i + CONCURRENCY);
+
+    await Promise.all(batch.map(async (row) => {
+      const url = row.audio_url!;
+      try {
+        const sec = await extractAudioDurationFromUrl(url);
+        if (sec === null || sec <= 0) {
+          skipped++;
+          logger.warn("admin: refresh-durations — no duration extracted", { id: row.id, url });
+          return;
+        }
+        await Content.update({ duracao: sec }, { where: { id: row.id } });
+        updated++;
+        logger.info("admin: refresh-durations — updated", { id: row.id, duracao: sec });
+      } catch (err) {
+        failed++;
+        const msg = err instanceof Error ? err.message : String(err);
+        errors.push({ id: row.id, audio_url: url, error: msg });
+        logger.error("admin: refresh-durations — failed", { id: row.id, url, err: msg });
+      }
+    }));
+  }
+
+  logger.info("admin: refresh-durations complete", {
+    processed: rows.length, updated, failed, skipped, adminId,
+  });
+
+  ok(res, {
+    processed: rows.length,
+    updated,
+    failed,
+    skipped,
+    errors,
+  }, `refresh-durations: ${updated} atualizado(s), ${failed} falha(s), ${skipped} sem duração`);
 }
 
 /* ─── Contents TTS ──────────────────────────────────────────────────────── */
