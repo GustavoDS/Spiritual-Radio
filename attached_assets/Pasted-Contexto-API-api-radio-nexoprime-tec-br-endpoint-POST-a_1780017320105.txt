@@ -1,0 +1,40 @@
+Contexto: API api-radio.nexoprime.tec.br, endpoint POST /api/grade-programas/resolve-day. Ele resolve a fila de execução do dia de uma rádio a partir da grade de programas + receitas de conteúdo. Hoje está retornando fila incompleta e repetitiva.
+
+Problema observado (canal X, data 2026-05-29):
+
+Programa "Madrugada" (00:00–05:00, 5h = 18000s) retorna só ~16 min de conteúdo, todos do tipo oracao, vários itens iguais repetidos em sequência.
+Nenhum item do tipo musica nem vinheta aparece em nenhum bloco do dia.
+total_blocks vem correto (8), mas os items de cada bloco estão vazios ou degenerados.
+O que preciso que você faça:
+
+Auditar gradeProgramasService.resolveDay(channel_id, date) e o seletor de conteúdo que ele usa. Quero entender:
+
+Como ele lê a receita do programa (proporções por tipo: musica / oracao / vinheta / locucao / etc).
+Como ele consulta os itens disponíveis por tipo+programa+canal.
+Como decide a ordem e evita repetição.
+Logar dentro do resolveDay (temporariamente), por bloco:
+
+programa_id, programa_nome, duração do bloco em segundos.
+Receita carregada (tipos e proporções/quantidades esperadas).
+Quantos itens disponíveis no banco por tipo para esse programa/canal.
+Quais itens foram selecionados e por quê (ou por que foi pulado).
+Corrigir o algoritmo para que cada bloco:
+
+Respeite a duração total do programa (preencher os 5h, não 16 min).
+Respeite a receita por tipo (incluir musica e vinheta quando a receita pedir).
+Aplique rotação: não repetir o mesmo content_id em sequência; respeitar um cooldown mínimo entre repetições do mesmo item.
+Se faltar item de um tipo, logar aviso e fazer fallback documentado (ex: puxar do pool global do canal), não simplesmente repetir o mesmo item N vezes.
+Validar input do endpoint com Zod/Joi (já feito parcialmente: channel_id obrigatório inteiro positivo, date opcional YYYY-MM-DD default hoje). Manter.
+
+Retornar no payload, por bloco, além do que já vem:
+
+duracao_real_sec (soma dos itens) vs duracao_min esperada → flag under_filled: true quando duracao_real_sec < duracao_min * 60 * 0.9.
+Contagem por tipo (counts: { musica: N, oracao: N, vinheta: N, ... }) pra o frontend poder alertar.
+Testes cobrindo:
+
+Body {} → 400 (já ok).
+Programa com receita só de oração → fila só de oração mas sem repetição imediata.
+Programa com receita mista → presença de musica + vinheta + oracao nas proporções pedidas.
+Pool insuficiente → under_filled: true no retorno + warning no log.
+Saída esperada: PR com diff do service, dos testes, e um exemplo de payload do resolveDay do canal X em 2026-05-29 ANTES e DEPOIS da correção.
+

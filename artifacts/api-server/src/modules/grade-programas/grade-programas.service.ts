@@ -47,6 +47,12 @@ export interface ResolveDayBlock {
   duracao_min: number;
   /** Total seconds of content resolved (may be < duracao_min*60 if pool is small) */
   duracao_real_sec: number;
+  /** true when duracao_real_sec < duracao_min * 60 * 0.9 — content pool too thin */
+  under_filled: boolean;
+  /** Number of items resolved per content tipo (e.g. { musica: 12, oracao: 4 }) */
+  counts: Record<string, number>;
+  /** Warnings for empty/thin pools or invalid tipos in the receita */
+  pool_warnings: string[];
   items: import("../../services/ResolveService.js").ResolvedItem[];
 }
 
@@ -355,6 +361,7 @@ export class GradeProgramasService {
         programa_nome: prog.nome,
       })));
 
+      const duracaoEsperadaSec = prog.duracao_min * 60;
       blockResults.push({
         grade_id: block.id,
         programa_id: prog.id,
@@ -365,6 +372,9 @@ export class GradeProgramasService {
         horario_fim: addMinutesToTime(normaliseTime(block.horario_inicio), prog.duracao_min),
         duracao_min: prog.duracao_min,
         duracao_real_sec: resolved.duracao_real_sec,
+        under_filled: resolved.duracao_real_sec < duracaoEsperadaSec * 0.9,
+        counts: resolved.counts,
+        pool_warnings: resolved.pool_warnings,
         items: resolved.items,
       });
     }

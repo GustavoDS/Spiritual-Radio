@@ -36,11 +36,47 @@ export interface ResolveResult {
   total_duration_sec: number;
   items: ResolvedItem[];
   ajustes: { vazio_sec: number; trocas: number };
+  /** Number of items per content tipo in the resolved timeline. */
+  counts: Record<string, number>;
+  /**
+   * Warnings for empty or thin pools, useful for the frontend to surface
+   * under-stocked channels. Also set when a tipo in the receita is invalid.
+   */
+  pool_warnings: string[];
 }
+
+/**
+ * Minimal content shape required by the pure timeline-building function.
+ * Exported so tests can construct lightweight fakes without DB models.
+ */
+export interface ContentLike {
+  id: number;
+  tipo: string;
+  duracao: number | null;
+  titulo: string;
+  audio_url: string | null;
+  mixed_audio_url?: string | null;
+  imagem_url?: string | null;
+}
+
+export interface FilledTimelineResult {
+  items: ContentLike[];
+  counts: Record<string, number>;
+  pool_warnings: string[];
+}
+
+/* ─── Valid content types ────────────────────────────────────────────────── */
+
+/**
+ * Types that live in the `contents` table and can be resolved by ResolveService.
+ * Vinhetas are handled separately by PlaylistMaterializationService via the
+ * `vinhetas` table (bloco + tipo_vinheta + channel_id) and must NOT appear here.
+ */
+export const TIPOS_VALIDOS_CONTENTS = ["musica", "oracao", "mensagem", "reflexao", "versiculo"];
 
 /* ─── Deterministic PRNG (mulberry32) ───────────────────────────────────── */
 
-function hashSeed(str: string): number {
+export function hashSeed(str: string): number {
   let h = 0x9e3779b9;
   for (let i = 0; i < str.length; i++) {
     h = Math.imul(h ^ str.charCodeAt(i), 0x517cc1b727220a95 | 0);
@@ -49,7 +85,7 @@ function hashSeed(str: string): number {
   return h >>> 0;
 }
 
-function mulberry32(seed: number) {
+export function mulberry32(seed: number): () => number {
   return function () {
     seed += 0x6d2b79f5;
     let z = seed;
@@ -59,7 +95,7 @@ function mulberry32(seed: number) {
   };
 }
 
-function shuffleWithSeed<T>(arr: T[], rng: () => number): T[] {
+export function shuffleWithSeed<T>(arr: T[], rng: () => number): T[] {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
     const j = Math.floor(rng() * (i + 1));
@@ -74,14 +110,166 @@ function addSecondsToIso(isoStr: string, sec: number): string {
   return new Date(new Date(isoStr).getTime() + sec * 1000).toISOString();
 }
 
-/* ─── Valid content types ────────────────────────────────────────────────── */
+/* ─── Pure timeline builder (exported for unit tests) ───────────────────── */
+
+/** Safety cap: max items picked per tipo tape to prevent infinite loops. */
+const MAX_FILL = 2000;
 
 /**
- * Types that live in the `contents` table and can be resolved by ResolveService.
- * Vinhetas are handled separately by PlaylistMaterializationService via the
- * `vinhetas` table (bloco + tipo_vinheta + channel_id) and must NOT appear here.
+ * Builds a content timeline for a program block from pre-shuffled pools.
+ *
+ * For each tipo in the receita:
+ *   - Fills a tape to its proportional target (totalSec × pct/100).
+ *   - Loops through the pool with per-pass reshuffles (deterministic via seedStr).
+ *   - Avoids immediate consecutive repetition of the same content_id when pool > 1.
+ *   - Warns if the pool is empty or too thin to fill 90% of the target.
+ *
+ * Interleaves the per-tipo tapes proportionally (round-robin) while respecting
+ * max_musicas_seguidas, then flushes any items stranded by the consecutive cap.
+ *
+ * Returns { items, counts, pool_warnings } — fully pure, no DB calls.
  */
-const TIPOS_VALIDOS_CONTENTS = ["musica", "oracao", "mensagem", "reflexao", "versiculo"];
+export function buildFilledTimeline(
+  poolsByTipo: Map<string, ContentLike[]>,
+  receita: ReceitaItem[],
+  totalSec: number,
+  maxMusSeguid: number,
+  seedStr: string,
+): FilledTimelineResult {
+  const pool_warnings: string[] = [];
+  const pickedByTipo = new Map<string, ContentLike[]>();
+
+  // A. Build per-tipo tapes that fill proportional target duration
+  for (const item of receita) {
+    if (!TIPOS_VALIDOS_CONTENTS.includes(item.tipo)) {
+      pool_warnings.push(`tipo=${item.tipo}: não é um tipo válido de contents — ignorado`);
+      continue;
+    }
+
+    const targetSec = Math.round(totalSec * item.pct / 100);
+    const pool = poolsByTipo.get(item.tipo) ?? [];
+
+    if (pool.length === 0) {
+      pool_warnings.push(`tipo=${item.tipo}: pool vazio — slot de ${targetSec}s ignorado`);
+      pickedByTipo.set(item.tipo, []);
+      continue;
+    }
+
+    const tape: ContentLike[] = [];
+    let accumulated = 0;
+    let loopPass = 0;
+    let passItems = [...pool]; // already shuffled before calling this function
+    let lastId = -1;
+    let safetyCount = 0;
+
+    outer:
+    while (accumulated < targetSec - 30 && safetyCount < MAX_FILL) {
+      let addedInPass = false;
+
+      for (const track of passItems) {
+        const dur = track.duracao ?? 0;
+        if (dur <= 0) continue;
+
+        // Avoid immediate consecutive repeat; always allow when pool has 1 item
+        if (track.id === lastId && pool.length > 1) continue;
+
+        tape.push(track);
+        accumulated += dur;
+        lastId = track.id;
+        safetyCount++;
+        addedInPass = true;
+
+        if (accumulated >= targetSec - 30 || safetyCount >= MAX_FILL) break outer;
+      }
+
+      // All items in pass were skipped (edge case: all remaining are lastId)
+      if (!addedInPass) break;
+
+      // Reshuffle for next pass — deterministic, seeded per tipo + pass
+      loopPass++;
+      passItems = shuffleWithSeed(
+        [...pool],
+        mulberry32(hashSeed(`${seedStr}-${item.tipo}-pass${loopPass}`)),
+      );
+    }
+
+    if (tape.length === 0 && pool.length > 0) {
+      // Defensive: force at least one item
+      tape.push(pool[0]!);
+      accumulated = pool[0]!.duracao ?? 0;
+    }
+
+    if (pool.length === 1 && tape.length > 1) {
+      pool_warnings.push(
+        `tipo=${item.tipo}: pool com 1 item — repetição forçada para cobrir ${targetSec}s`,
+      );
+    } else if (accumulated < targetSec * 0.9) {
+      pool_warnings.push(
+        `tipo=${item.tipo}: pool insuficiente` +
+        ` (${pool.length} item(s), ${accumulated}s de ${targetSec}s alvo)`,
+      );
+    }
+
+    pickedByTipo.set(item.tipo, tape);
+  }
+
+  // B. Interleave tipos (proportional round-robin + max_musicas_seguidas)
+  const orderedItems: ContentLike[] = [];
+  const validReceita = receita.filter((r) => TIPOS_VALIDOS_CONTENTS.includes(r.tipo));
+  const totalBuckets = validReceita.map((r) => ({
+    tipo: r.tipo,
+    items: pickedByTipo.get(r.tipo) ?? [],
+  }));
+
+  const cursors = new Map<string, number>();
+  for (const b of totalBuckets) cursors.set(b.tipo, 0);
+
+  let consecutiveSame = 0;
+  let lastTipo = "";
+  let anyAdded = true;
+
+  while (anyAdded) {
+    anyAdded = false;
+    for (const bucket of totalBuckets) {
+      const cursor = cursors.get(bucket.tipo) ?? 0;
+      if (cursor >= bucket.items.length) continue;
+
+      if (bucket.tipo === "musica" && lastTipo === "musica" && consecutiveSame >= maxMusSeguid) {
+        continue;
+      }
+
+      orderedItems.push(bucket.items[cursor]!);
+      cursors.set(bucket.tipo, cursor + 1);
+      anyAdded = true;
+
+      if (bucket.tipo === lastTipo) {
+        consecutiveSame++;
+      } else {
+        consecutiveSame = 1;
+        lastTipo = bucket.tipo;
+      }
+    }
+  }
+
+  // Flush items that were stranded when max_musicas_seguidas caused early exit
+  // (happens when musica is the last remaining tipo and consecutive cap is hit)
+  for (const bucket of totalBuckets) {
+    let cursor = cursors.get(bucket.tipo) ?? 0;
+    while (cursor < bucket.items.length) {
+      orderedItems.push(bucket.items[cursor]!);
+      cursor++;
+    }
+    cursors.set(bucket.tipo, cursor);
+  }
+
+  // C. Count by tipo
+  const counts: Record<string, number> = {};
+  for (const item of orderedItems) {
+    counts[item.tipo] = (counts[item.tipo] ?? 0) + 1;
+  }
+
+  return { items: orderedItems, counts, pool_warnings };
+}
 
 /* ─── ResolveService ─────────────────────────────────────────────────────── */
 
@@ -110,14 +298,12 @@ export class ResolveService {
     });
     const recentIds = new Set(recentlyPlayed.map((p) => p.content_id));
 
-    // 2. Load content by tipo, applying anti-repetition
+    // 2. Load and shuffle content pools per tipo
     const seedStr = `${date}-${channelId}-${programaId}-${seedExtra ?? ""}`;
     const rng = mulberry32(hashSeed(seedStr));
 
-    const contentByTipo = new Map<string, Content[]>();
+    const poolsByTipo = new Map<string, ContentLike[]>();
     for (const item of receita) {
-      // Guard: skip types that don't live in `contents` (e.g. 'vinheta', which
-      // is injected from the `vinhetas` table by PlaylistMaterializationService).
       if (!TIPOS_VALIDOS_CONTENTS.includes(item.tipo)) {
         logger.warn("[ResolveService] Tipo inválido ignorado na receita", {
           tipo: item.tipo,
@@ -151,7 +337,7 @@ export class ResolveService {
       const fresh = pool.filter((c) => !recentIds.has(c.id));
       const available = fresh.length > 0 ? fresh : pool;
       const shuffled = shuffleWithSeed(available, rng);
-      contentByTipo.set(item.tipo, shuffled);
+      poolsByTipo.set(item.tipo, shuffled);
 
       logger.info("ResolveService: content pool", {
         programaId, channelId, tipo: item.tipo,
@@ -159,75 +345,23 @@ export class ResolveService {
       });
     }
 
-    // 3. Bin-pack each tipo slot
-    const pickedByTipo = new Map<string, Content[]>();
-    let trocas = 0;
+    // 3 + 4. Fill tapes per tipo (looping + rotation) and interleave
+    const { items: orderedItems, counts, pool_warnings } = buildFilledTimeline(
+      poolsByTipo,
+      receita,
+      totalSec,
+      maxMusSeguid,
+      seedStr,
+    );
 
-    for (const item of receita) {
-      const targetSec = Math.round(totalSec * item.pct / 100);
-      const pool = contentByTipo.get(item.tipo) ?? [];
-      const picked: Content[] = [];
-      let accumulated = 0;
-
-      for (const track of pool) {
-        const dur = track.duracao ?? 0;
-        if (accumulated + dur <= targetSec + 30) {
-          picked.push(track);
-          accumulated += dur;
-        }
-        if (accumulated >= targetSec - 30) break;
-      }
-
-      // If we picked nothing but pool has tracks, force at least one
-      if (picked.length === 0 && pool.length > 0) {
-        picked.push(pool[0]!);
-        trocas++;
-      }
-
-      pickedByTipo.set(item.tipo, picked);
-    }
-
-    // 4. Interleave items according to receita order and max_musicas_seguidas
-    const orderedItems: Content[] = [];
-    const cursors = new Map<string, number>();
-    for (const item of receita) cursors.set(item.tipo, 0);
-
-    // Build order: cycle through tipos proportionally, limiting consecutive same-tipo
-    const totalBuckets = receita.map((r) => ({
-      tipo: r.tipo,
-      items: pickedByTipo.get(r.tipo) ?? [],
-    }));
-
-    let consecutiveSame = 0;
-    let lastTipo = "";
-    let anyAdded = true;
-
-    while (anyAdded) {
-      anyAdded = false;
-      for (const bucket of totalBuckets) {
-        const cursor = cursors.get(bucket.tipo) ?? 0;
-        if (cursor >= bucket.items.length) continue;
-
-        // Respect max_musicas_seguidas for "musica" tipo
-        if (bucket.tipo === "musica" && lastTipo === "musica" && consecutiveSame >= maxMusSeguid) {
-          continue;
-        }
-
-        orderedItems.push(bucket.items[cursor]!);
-        cursors.set(bucket.tipo, cursor + 1);
-        anyAdded = true;
-
-        if (bucket.tipo === lastTipo) {
-          consecutiveSame++;
-        } else {
-          consecutiveSame = 1;
-          lastTipo = bucket.tipo;
-        }
-      }
+    // Log pool_warnings at warn level so they surface in production logs
+    for (const w of pool_warnings) {
+      logger.warn("[ResolveService] pool warning", { programaId, channelId, warning: w });
     }
 
     // 5. Apply abre_com / fecha_com rules
     let finalItems = [...orderedItems];
+    let trocas = 0;
 
     if (regras.abre_com) {
       const abridx = finalItems.findIndex((c) => c.tipo === regras.abre_com);
@@ -239,7 +373,6 @@ export class ResolveService {
     }
 
     if (regras.fecha_com) {
-      // findLastIndex polyfill for older TS lib targets
       let fechidx = -1;
       for (let i = finalItems.length - 1; i >= 0; i--) {
         if (finalItems[i]!.tipo === regras.fecha_com) { fechidx = i; break; }
@@ -261,7 +394,7 @@ export class ResolveService {
       if (currentTime) {
         currentTime = addSecondsToIso(currentTime, c.duracao ?? 0);
       }
-      const audioUrl = c.mixed_audio_url ?? c.audio_url ?? null;
+      const audioUrl = (c as ContentLike & { mixed_audio_url?: string | null }).mixed_audio_url ?? c.audio_url ?? null;
       return {
         ordem: i + 1,
         content_id: c.id,
@@ -299,6 +432,8 @@ export class ResolveService {
       items: resolvedItems.length,
       duracao_real_sec,
       vazio_sec,
+      counts,
+      under_filled: duracao_real_sec < totalSec * 0.9,
     });
 
     return {
@@ -308,6 +443,8 @@ export class ResolveService {
       total_duration_sec: duracao_real_sec,
       items: resolvedItems,
       ajustes: { vazio_sec, trocas },
+      counts,
+      pool_warnings,
     };
   }
 }

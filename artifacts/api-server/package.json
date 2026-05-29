@@ -7,7 +7,9 @@
     "dev": "cross-env NODE_ENV=development pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
     "start": "node --env-file=.env --enable-source-maps ./dist/index.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -54,6 +56,7 @@
     "@types/swagger-jsdoc": "^6.0.4",
     "@types/swagger-ui-express": "^4.1.8",
     "cross-env": "^10.1.0",
-    "esbuild": "0.27.3"
+    "esbuild": "0.27.3",
+    "vitest": "^4.1.7"
   }
 }
