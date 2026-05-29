@@ -316,21 +316,30 @@ export class ResolveService {
       const pool = await Content.findAll({
         where: ({
           tipo: item.tipo,
-          ativo: true,
+          // ativo may be null on legacy rows — treat null as true
+          ativo: { [Op.not]: false },
           // Must have a playable audio file — prevents unresolvable items from
           // entering the playlist and causing a "between_blocks" gap at runtime.
           audio_url: { [Op.not]: null },
           duracao: { [Op.gt]: 0, [Op.ne]: null },
+          // M:N join (content_channels) OR legacy direct FK — whichever is set
+          [Op.or]: [
+            { "$channels.id$": channelId },
+            { channel_id: channelId },
+          ],
         }) as Record<string, unknown>,
         include: [{
           model: Channel,
           as: "channels",
-          where: { id: channelId },
-          required: true,
+          // LEFT JOIN so rows without a content_channels entry still pass the
+          // OR above via the legacy channel_id column
+          required: false,
           through: { attributes: [] },
-          attributes: [],
+          attributes: ["id"],
         }],
         attributes: ["id", "titulo", "tipo", "duracao", "audio_url", "mixed_audio_url", "imagem_url"],
+        // DISTINCT avoids duplicate rows when a content has multiple content_channels entries
+        group: ["Content.id"],
       });
 
       // Prefer non-recently-played; fall back to all if pool would be empty

@@ -1,0 +1,64 @@
+O fix no backend (api-radio.nexoprime.tec.br) é trocar o filtro WHERE c.channel_id = :channel_id por um JOIN na tabela content_channels, mantendo fallback pra coluna legada.
+
+SQL — antes vs depois
+Antes (atual, quebrado):
+
+SELECT c.*
+FROM contents c
+WHERE c.tipo = :tipo
+  AND c.channel_id = :channel_id
+  AND COALESCE(c.ativo, true) = true;
+Depois (correto, M:N + fallback):
+
+SELECT DISTINCT c.*
+FROM contents c
+LEFT JOIN content_channels cc ON cc.content_id = c.id
+WHERE c.tipo = :tipo
+  AND COALESCE(c.ativo, true) = true
+  AND (
+    cc.channel_id = :channel_id
+    OR c.channel_id = :channel_id
+  );
+O LEFT JOIN + OR garante:
+
+Conteúdos novos (ligados via content_channels) entram ✅
+Conteúdos legados (com contents.channel_id preenchido) continuam funcionando ✅
+DISTINCT evita duplicação se um conteúdo tiver múltiplas linhas em content_channels
+Se o resolver usa ORM (Sequelize/Prisma/TypeORM)
+Sequelize:
+
+const contents = await Content.findAll({
+  where: {
+    tipo,
+    ativo: { [Op.not]: false },
+    [Op.or]: [
+      { '$channels.id$': channelId },
+      { channel_id: channelId },
+    ],
+  },
+  include: [{ model: Channel, as: 'channels', through: { attributes: [] }, required: false }],
+});
+Prisma:
+
+const contents = await prisma.content.findMany({
+  where: {
+    tipo,
+    ativo: { not: false },
+    OR: [
+      { channels: { some: { channel_id: channelId } } },
+      { channel_id: channelId },
+    ],
+  },
+});
+Onde procurar no backend
+Busque por estes padrões no repo da API:
+
+rg -n "channel_id" --type=js --type=ts -g '!node_modules'
+rg -n "resolve.?day|resolveDay|grade.*resolve" -g '!node_modules'
+rg -n "tipo.*musica|pool" -g '!node_modules'
+O arquivo provavelmente está em services/grade-resolver, controllers/grade-programas, ou similar. O método chamado pelo endpoint POST /grade-programas/resolve-day.
+
+Validação pós-deploy
+Chamar POST /grade-programas/resolve-day com { date, channel_id: 1 }
+Conferir no response que blocks[].items de tipo musica vêm preenchidos
+Conferir pool_warnings — deve sumir o aviso de pool vazio
