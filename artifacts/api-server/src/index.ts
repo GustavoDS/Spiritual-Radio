@@ -169,6 +169,7 @@ async function bootstrap(): Promise<void> {
           return {
             id: content["id"] as number,
             titulo: content["titulo"] as string | undefined,
+            tipo: content["tipo"] as string | undefined,
             audioUrl: content["audio_url"] as string | undefined,
             artworkUrl: content["artwork_url"] as string | undefined,
           };

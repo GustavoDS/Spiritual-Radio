@@ -50,6 +50,7 @@ interface SSEClient {
 export interface TrackPayload {
   id: number | null;
   titulo?: string;
+  tipo?: string;
   audioUrl?: string;
   artworkUrl?: string;
 }
@@ -141,7 +142,7 @@ class RealtimeService {
                 channel_id: channelId,
                 content_id: currentId,
                 titulo: current?.titulo ?? "(desconhecido)",
-                tipo: "desconhecido",
+                tipo: current?.tipo ?? "desconhecido",
                 played_at: new Date(),
               }).catch((err) => {
                 logger.debug("RadioPlay.create failed (non-fatal)", { err: (err as Error).message });
