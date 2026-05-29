@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { gradeProgramasService } from "./grade-programas.service.js";
 import { ok, created, noContent, paginated } from "../../utils/response.js";
+import { HttpError } from "../../middlewares/errorHandler.js";
 
 export async function getAll(req: Request, res: Response): Promise<void> {
   const result = await gradeProgramasService.findAll({
@@ -58,9 +59,16 @@ export async function bulkCreate(req: Request, res: Response): Promise<void> {
 
 export async function resolveDay(req: Request, res: Response): Promise<void> {
   const body = req.body as Record<string, unknown>;
-  const result = await gradeProgramasService.resolveDay(
-    Number(body["channel_id"]),
-    body["date"] as string,
-  );
+
+  const channelId = Number(body["channel_id"]);
+  if (!Number.isFinite(channelId) || channelId <= 0) {
+    throw new HttpError("channel_id é obrigatório e deve ser um inteiro positivo", 400);
+  }
+
+  const date = typeof body["date"] === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body["date"])
+    ? body["date"]
+    : new Date().toISOString().slice(0, 10);
+
+  const result = await gradeProgramasService.resolveDay(channelId, date);
   ok(res, result);
 }
