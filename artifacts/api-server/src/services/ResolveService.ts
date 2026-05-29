@@ -335,11 +335,12 @@ export class ResolveService {
           // OR above via the legacy channel_id column
           required: false,
           through: { attributes: [] },
-          attributes: ["id"],
+          // Select no channel columns — avoids GROUP BY requirement on joined columns
+          attributes: [],
         }],
         attributes: ["id", "titulo", "tipo", "duracao", "audio_url", "mixed_audio_url", "imagem_url"],
-        // DISTINCT avoids duplicate rows when a content has multiple content_channels entries
-        group: ["Content.id"],
+        // content_channels has composite PK (content_id, channel_id) so a content
+        // can appear at most once per channelId — no duplicates, no GROUP BY needed.
       });
 
       // Prefer non-recently-played; fall back to all if pool would be empty
