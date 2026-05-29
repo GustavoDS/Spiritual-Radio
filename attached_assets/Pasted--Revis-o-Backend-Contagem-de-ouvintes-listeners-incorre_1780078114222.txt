@@ -1,0 +1,44 @@
+# Revisão Backend — Contagem de ouvintes (listeners) incorreta
+
+Contexto: o contador de ouvintes exibido em `/public/stream/{id}/now-playing.json#listeners` e em `/admin/stream/status#channels[].listeners` não reflete a realidade. Ora infla (cada request de `live.m3u8` parece abrir uma nova sessão), ora zera mesmo com players ativos.
+
+O frontend já faz a parte dele:
+- captura o header `X-AutoDJ-Session` na resposta de `live.m3u8`;
+- envia `GET /public/stream/ping?token=...` a cada ~30s enquanto está tocando;
+- reaproveita o mesmo token durante toda a sessão do player (não gera novo a cada reconexão de buffer).
+
+Precisamos que o backend ajuste:
+
+## 1. Emissão do token de sessão (`X-AutoDJ-Session`)
+- `GET /public/stream/{id}/live.m3u8` deve responder com header `X-AutoDJ-Session` (case-insensitive) contendo um identificador único **por listener**, não por request.
+- Reutilizar o token quando a mesma origem (IP + User-Agent + cookie/sessão) refizer o request dentro de uma janela curta (ex.: 60s). Hoje aparenta gerar um token novo a cada hit, inflando a contagem.
+- Opcional: também expor o token como tag de comentário no playlist (`#X-AUTODJ-SESSION: <token>`) para clientes que não conseguem ler headers.
+
+## 2. Contagem efetiva no `now-playing.json`
+- O campo `listeners` deve refletir o número de **sessões distintas ativas** nos últimos 60–90s (último `ping` OU último download de segmento `.ts`).
+- Garantir que o serviço que lê esse valor consulta o mesmo store onde os pings são gravados (Redis/DB). Hoje suspeitamos de leituras de stores diferentes entre `now-playing` e `admin/stream/status`.
+
+## 3. Fonte alternativa de presença
+- Se o `hls.js` baixa os segmentos `.ts` direto do R2/CDN (sem passar pelo backend), o backend perde visibilidade da presença. Duas opções:
+  a) Servir `.ts` via proxy do backend para registrar o hit (com token); **ou**
+  b) Confiar exclusivamente no `/ping` enviado pelo player com o token.
+- Escolher uma estratégia e documentar. Hoje parece estar misturando as duas e contando errado.
+
+## 4. Expiração de sessão
+- Sessões sem `ping` há mais de ~90s devem ser removidas do store.
+- Implementar job periódico (ou TTL no Redis) que limpa sessões mortas. Sem isso o contador só sobe.
+
+## 5. Consistência entre endpoints
+- `/public/stream/{id}/now-playing.json#listeners`
+- `/admin/stream/status#channels[].listeners`
+- `/admin/stream/listeners` (lista detalhada)
+
+Todos devem vir da mesma fonte de verdade. Hoje divergem.
+
+## 6. Como validar
+- Abrir 1 player no navegador → após ~30s, `listeners` = 1 em todos os endpoints.
+- Fechar o player → após ~90s, `listeners` = 0.
+- Abrir 3 abas simultâneas → `listeners` = 3 (não 3×N pelos requests de m3u8/segments).
+- `/admin/stream/listeners` deve listar exatamente as mesmas sessões.
+
+Por favor revisar e ajustar. Qualquer dúvida sobre o comportamento do frontend (token, ping, reconexão), me avisem.

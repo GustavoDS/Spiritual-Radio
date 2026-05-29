@@ -22,8 +22,14 @@ export interface ListenerStats {
 
 /* ─── StreamSessionStore ─────────────────────────────────────────────────── */
 
-const SESSION_TIMEOUT_MS = 5 * 60 * 1000; // 5 min without ping = disconnected
-const CLEANUP_INTERVAL_MS = 60 * 1000;    // run cleanup every minute
+/**
+ * A session is considered live as long as a ping (or a /live.m3u8 request,
+ * which also refreshes lastPingAt via findByFingerprint) arrives within this
+ * window.  The frontend sends pings every ~30 s, so 3 missed pings ≈ 90 s is
+ * enough to declare the listener gone without being too aggressive.
+ */
+const SESSION_TIMEOUT_MS = 90 * 1000;  // 90 s without activity = disconnected
+const CLEANUP_INTERVAL_MS = 20 * 1000; // run cleanup every 20 s
 
 export class StreamSessionStore {
   private sessions = new Map<string, StreamSession>();

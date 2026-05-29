@@ -137,6 +137,9 @@ export async function getNowPlaying(req: Request, res: Response): Promise<void> 
   }
 
   const np = autoDjService.getNowPlaying(channelId);
+  // Single source of truth for listener count: count live sessions in the store.
+  // This is the same source used by /admin/stream/status and /admin/stream/listeners.
+  const listenerCount = streamSessionStore.count(channelId);
   corsHeaders(res);
   res.setHeader("Cache-Control", "no-cache");
 
@@ -152,6 +155,7 @@ export async function getNowPlaying(req: Request, res: Response): Promise<void> 
     offlineReason: np.offlineReason ?? null,
     nextStartsAt: np.nextStartsAt ?? null,
     queueSize: np.upNext.length + (np.current ? 1 : 0) + (np.next ? 1 : 0),
+    listeners: listenerCount,
     computedNow: new Date().toISOString(),
   });
 
@@ -196,7 +200,8 @@ export async function getNowPlaying(req: Request, res: Response): Promise<void> 
     offlineReason: np.offlineReason,
     nextStartsAt: np.nextStartsAt,
 
-    listeners: np.listenerCount,
+    // Listener count from the session store — same source as admin endpoints
+    listeners: listenerCount,
     fetchedAt: new Date().toISOString(),
   });
 }
