@@ -1,4 +1,4 @@
-import rateLimit, { type RateLimitRequestHandler } from "express-rate-limit";
+import rateLimit, { ipKeyGenerator, type RateLimitRequestHandler } from "express-rate-limit";
 import type { Request, Response } from "express";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
@@ -6,16 +6,18 @@ import { logger } from "../lib/logger.js";
 /* ─── Key generators ─────────────────────────────────────────────────────── */
 
 /**
- * Default key: the client IP extracted from the leftmost X-Forwarded-For entry
- * (trust proxy = 1 is set in app.ts so Express already normalises req.ip).
+ * Normalises the client IP extracted from req.ip (which Express already
+ * resolves from X-Forwarded-For when trust proxy is set) and calls
+ * ipKeyGenerator() to handle IPv6-mapped IPv4 addresses
+ * (e.g. "::ffff:1.2.3.4" → "1.2.3.4"), satisfying the ERR_ERL_KEY_GEN_IPV6
+ * validation added in express-rate-limit v8.
  */
 function ipKey(req: Request): string {
-  return (req.headers["x-forwarded-for"] as string | undefined)
-    ?.split(",")[0]?.trim() ?? req.ip ?? "unknown";
+  return ipKeyGenerator(req.ip ?? "unknown");
 }
 
 /**
- * Stream key: IP + session token when available.
+ * Stream key: normalised IP + session token when available.
  *
  * Players behind a shared NAT/corporate proxy/Cloudflare share the same IP.
  * Including the X-AutoDJ-Session token gives each physical player its own
@@ -24,7 +26,7 @@ function ipKey(req: Request): string {
  * frontend captures the token from the manifest response header).
  */
 function streamKey(req: Request): string {
-  const ip = ipKey(req);
+  const ip = ipKeyGenerator(req.ip ?? "unknown");
   const token =
     (req.headers["x-autodj-session"] as string | undefined) ??
     (req.query["token"] as string | undefined);
