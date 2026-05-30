@@ -12,7 +12,7 @@ export interface ResolvedItemContent {
   tipo: string;
   audio_url: string | null;
   imagem_url: string | null;
-  duracao: number;
+  duracao: number | null;
 }
 
 export interface ResolvedItem {
@@ -23,8 +23,10 @@ export interface ResolvedItem {
    */
   id?: number;
   ordem: number;
-  content_id: number;
-  titulo: string;
+  /** null when the slot has no associated content (e.g. a manual placeholder). */
+  content_id: number | null;
+  /** null when content_id is null or the content record has been deleted. */
+  titulo: string | null;
   tipo: string;
   duration_sec: number;
   /** Alias for duration_sec — included for API backward compatibility. */
@@ -32,8 +34,8 @@ export interface ResolvedItem {
   starts_at: string | null;
   /** Effective audio URL (prefers mixed_audio_url, falls back to audio_url). */
   audio_url: string | null;
-  /** Full content object for frontend rendering. */
-  content: ResolvedItemContent;
+  /** Full content object for frontend rendering; null when content_id is null. */
+  content: ResolvedItemContent | null;
 }
 
 export interface ResolveResult {

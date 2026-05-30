@@ -1,0 +1,86 @@
+ revisão e correção do day_block_items
+Contexto
+A materialização em day_block_items está funcionando (POST /grade-programas/resolve-day grava corretamente). Porém as leituras posteriores via GET /day-block-items (e o retorno do PUT /day-block-items/bulk) devolvem itens "crus", sem fazer JOIN com contents. Resultado prático no frontend:
+
+Primeira chamada (resolve-day) → itens completos com titulo, audio_url, content.* ✅
+Chamadas seguintes (list materializado) → titulo: "Item 0", audio_url: null, content.id: 0 ❌
+Isso quebra:
+
+A tela Fila do Dia (mostra "Item 0" em vez do título real).
+A edição inline de itens (não consegue exibir/trocar o conteúdo).
+Qualquer player que dependa do audio_url.
+O que precisa ser corrigido
+1. GET /day-block-items?date=&channel_id=&grade_id= — incluir JOIN com contents
+A resposta de cada item DEVE espelhar exatamente o shape que resolve-day retorna em blocks[].items[], ou seja:
+
+{
+  "id": "1907",                       // day_block_items.id
+  "ordem": 1,
+  "date": "2026-06-01",
+  "channel_id": 1,
+  "grade_id": 6,
+  "programa_id": 16,
+  "tipo": "musica",
+  "duracao_sec": 240,
+  "source": "auto",
+  "content_id": 137,
+
+  // 👇 campos derivados do JOIN com contents (quando content_id != null)
+  "titulo": "Porque Ele Vive",
+  "audio_url": "https://.../audio/xxx.mp3",
+  "content": {
+    "id": 137,
+    "title": "Porque Ele Vive",
+    "audio_url": "https://.../audio/xxx.mp3",
+    "duration_sec": 240,
+    "tipo": "musica",
+    "categoria_id": 3,
+    "status": "Pronto"
+    // ... demais campos de Content já usados no resolve-day
+  }
+}
+Quando content_id IS NULL (slot vazio / manual sem conteúdo), retornar content: null, titulo: null, audio_url: null — nunca "Item 0" ou content.id: 0.
+
+Implementação esperada (Sequelize):
+
+DayBlockItem.findAll({
+  where: { date, channel_id, ...(grade_id && { grade_id }) },
+  include: [{ model: Content, as: 'content', required: false }],
+  order: [['grade_id', 'ASC'], ['ordem', 'ASC']],
+})
+E no serializer, achatar titulo e audio_url a partir de content (igual ao resolve-day).
+
+2. PUT /day-block-items/bulk — retornar os itens já enriquecidos
+Hoje o bulkReplace devolve as linhas inseridas sem JOIN. Após o bulkCreate, recarregar com o mesmo include de contents antes de devolver a resposta, para o frontend não precisar refazer um GET imediatamente após salvar.
+
+3. POST /grade-programas/resolve-day — preservar id do day_block_items
+Confirmar que, depois de materializar, o id que vai em blocks[].items[].id é o day_block_items.id (não um id sintético/index). Sem isso, o frontend não consegue editar/excluir o item específico depois.
+
+4. Coerência de source
+Itens criados pelo resolve-day → source: "auto".
+Itens criados/alterados pelo bulk manual → source: "manual".
+Ao reexecutar resolve-day para uma data, não sobrescrever itens com source: "manual" (manter o que o operador editou à mão). Se for inviável agora, ao menos documentar o comportamento atual.
+5. Índice único / cascades — sanity check final
+Confirmar pós-migration 32:
+
+Existe um único índice day_block_items_unique em (date, COALESCE(channel_id, 0), grade_id, ordem).
+\d day_block_items no Postgres não lista índices duplicados.
+Deletar um grade_programa remove os itens (CASCADE) e deletar um content apenas zera content_id (SET NULL) — testar com 1 caso de cada.
+6. Logs
+No log de resolveDay: materialized to day_block_items, incluir também duracao_total_sec por bloco (já existe em ResolveService.resolve, só replicar). Ajuda a diagnosticar buracos sem precisar abrir o banco.
+
+Critério de aceite
+Rodar nesta ordem e validar:
+
+# 1. Materializar
+POST /grade-programas/resolve-day  { "date": "2026-06-02", "channel_id": 1 }
+
+# 2. Ler de volta — TODOS os itens devem ter titulo + audio_url quando content_id != null
+GET  /day-block-items?date=2026-06-02&channel_id=1
+
+# 3. Editar um item via bulk — resposta já deve vir com titulo + audio_url
+PUT  /day-block-items/bulk { ... }
+
+# 4. Reler — mesma resposta enriquecida
+GET  /day-block-items?date=2026-06-02&channel_id=1&grade_id=6
+Nenhuma resposta pode conter "titulo":"Item 0", "audio_url":null quando content_id está preenchido, ou "content":{"id":0,...}.

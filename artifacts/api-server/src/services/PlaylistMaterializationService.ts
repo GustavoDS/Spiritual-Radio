@@ -193,7 +193,7 @@ export class PlaylistMaterializationService {
       // 5b. First pass — content items with "antes_de_X" vinheta injection
       for (const item of block.items) {
         // Inject antes_de_X before spoken content that has auto-vinheta enabled
-        if (item.tipo !== "musica" && (usaVinhetaMap.get(item.content_id) ?? true)) {
+        if (item.tipo !== "musica" && (item.content_id != null ? (usaVinhetaMap.get(item.content_id) ?? true) : false)) {
           const tipoV = beforeTipoVinheta(item.tipo);
           if (tipoV) await pushVinheta(tipoV);
         }

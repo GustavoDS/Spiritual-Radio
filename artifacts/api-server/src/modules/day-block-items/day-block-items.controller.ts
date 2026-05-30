@@ -4,13 +4,74 @@ import { ok } from "../../utils/response.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
 import { DayBlockItem, GradePrograma, Content, sequelize } from "../../models/index.js";
 
+/* ─── Serializer ────────────────────────────────────────────────────────── */
+
+type RawDayBlockItem = InstanceType<typeof DayBlockItem> & {
+  content?: InstanceType<typeof Content> | null;
+};
+
+/**
+ * Serializes a DayBlockItem (with its eagerly-loaded `content` association)
+ * into the shape the frontend expects.  When content_id is null or the join
+ * returns nothing, `titulo`, `audio_url`, and `content` are all null — never
+ * synthetic placeholders like "Item 0" or `{ id: 0 }`.
+ */
+function serializeItem(item: RawDayBlockItem) {
+  const c = item.content ?? null;
+  const audioUrl: string | null = c
+    ? ((c as InstanceType<typeof Content> & { mixed_audio_url?: string | null }).mixed_audio_url
+        ?? c.audio_url
+        ?? null)
+    : null;
+
+  return {
+    id: item.id,
+    ordem: item.ordem,
+    date: item.date,
+    channel_id: item.channel_id ?? null,
+    grade_id: item.grade_id,
+    programa_id: item.programa_id,
+    tipo: item.tipo,
+    duracao_sec: item.duracao_sec,
+    source: item.source,
+    content_id: item.content_id ?? null,
+    titulo: c?.titulo ?? null,
+    audio_url: audioUrl,
+    content: c
+      ? {
+          id: c.id,
+          titulo: c.titulo,
+          tipo: c.tipo,
+          audio_url: audioUrl,
+          imagem_url:
+            (c as InstanceType<typeof Content> & { imagem_url?: string | null }).imagem_url ?? null,
+          duracao: c.duracao,
+          status: (c as InstanceType<typeof Content> & { status?: string | null }).status ?? null,
+        }
+      : null,
+  };
+}
+
+/** Loads DayBlockItem rows with their Content join and serializes each one. */
+async function loadEnriched(where: Record<string, unknown>) {
+  const rows = await DayBlockItem.findAll({
+    where,
+    include: [{ model: Content, as: "content", required: false }],
+    order: [
+      ["grade_id", "ASC"],
+      ["ordem", "ASC"],
+    ],
+  });
+  return (rows as RawDayBlockItem[]).map(serializeItem);
+}
+
 /* ─── GET /day-block-items ─────────────────────────────────────────────── */
 
 /**
  * @swagger
  * /day-block-items:
  *   get:
- *     summary: Lista itens materializados de um dia
+ *     summary: Lista itens materializados de um dia (com dados de content)
  *     tags: [Day Block Items]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -28,7 +89,7 @@ import { DayBlockItem, GradePrograma, Content, sequelize } from "../../models/in
  *         description: Filtrar por bloco específico
  *     responses:
  *       200:
- *         description: Itens do dia
+ *         description: Itens do dia com titulo, audio_url e content expandidos
  */
 export async function getItems(req: Request, res: Response): Promise<void> {
   const date = req.query["date"] as string | undefined;
@@ -45,11 +106,7 @@ export async function getItems(req: Request, res: Response): Promise<void> {
   const where: Record<string, unknown> = { date, channel_id: channelId };
   if (gradeId !== undefined && Number.isFinite(gradeId)) where["grade_id"] = gradeId;
 
-  const items = await DayBlockItem.findAll({
-    where,
-    order: [["grade_id", "ASC"], ["ordem", "ASC"]],
-  });
-
+  const items = await loadEnriched(where);
   ok(res, { items, count: items.length, date, channel_id: channelId });
 }
 
@@ -92,7 +149,7 @@ interface BulkItemInput {
  *                     duracao_sec: { type: integer, minimum: 0 }
  *     responses:
  *       200:
- *         description: Itens do bloco substituídos
+ *         description: Itens do bloco substituídos (com titulo, audio_url e content expandidos)
  *       400:
  *         description: Validação falhou
  *       404:
@@ -141,7 +198,11 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
   }
 
   // ── Validate content_ids exist in contents
-  const contentIds = [...new Set(typedItems.map((i) => i.content_id).filter((id): id is number => id != null && id > 0))];
+  const contentIds = [
+    ...new Set(
+      typedItems.map((i) => i.content_id).filter((id): id is number => id != null && id > 0),
+    ),
+  ];
   if (contentIds.length > 0) {
     const found = await Content.findAll({ where: { id: { [Op.in]: contentIds } }, attributes: ["id"] });
     if (found.length !== contentIds.length) {
@@ -156,12 +217,12 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
   if (!grade) throw new HttpError(`grade_id ${gradeId} não encontrado`, 404);
   const programaId = grade.programa_id;
 
-  // ── Atomic replace
-  const created = await sequelize.transaction(async () => {
+  // ── Atomic replace (DELETE + INSERT in transaction)
+  await sequelize.transaction(async () => {
     await DayBlockItem.destroy({
       where: { date, channel_id: channelId, grade_id: gradeId },
     });
-    return DayBlockItem.bulkCreate(
+    await DayBlockItem.bulkCreate(
       typedItems.map((item) => ({
         date,
         channel_id: channelId,
@@ -177,7 +238,9 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
     );
   });
 
-  ok(res, { items: created, count: created.length, date, channel_id: channelId, grade_id: gradeId });
+  // ── Reload with Content JOIN so the response mirrors GET /day-block-items
+  const enriched = await loadEnriched({ date, channel_id: channelId, grade_id: gradeId });
+  ok(res, { items: enriched, count: enriched.length, date, channel_id: channelId, grade_id: gradeId });
 }
 
 /* ─── DELETE /day-block-items ──────────────────────────────────────────── */

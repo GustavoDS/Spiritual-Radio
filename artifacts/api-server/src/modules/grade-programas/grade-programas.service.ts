@@ -351,7 +351,9 @@ export class GradeProgramasService {
     date: string,
   ): Promise<ResolveDayBlock> {
     const contentIds = [
-      ...new Set(items.map((i) => i.content_id).filter((id): id is number => id != null)),
+      ...new Set(
+        items.map((i) => i.content_id).filter((id): id is number => id != null).map(Number),
+      ),
     ];
 
     const contentsRaw =
@@ -361,7 +363,10 @@ export class GradeProgramasService {
             attributes: ["id", "titulo", "tipo", "audio_url", "mixed_audio_url", "imagem_url", "duracao"],
           })
         : [];
-    const contentMap = new Map(contentsRaw.map((c) => [c.id, c]));
+    // Normalize keys to Number: Sequelize BIGINT columns return strings at runtime,
+    // but content_id fields on DayBlockItem can be numbers — use Number() on both
+    // sides to guarantee Map.get() hits regardless of which type Sequelize chose.
+    const contentMap = new Map(contentsRaw.map((c) => [Number(c.id), c]));
 
     const blockStartMs = new Date(`${date}T${normaliseTime(block.horario_inicio)}Z`).getTime();
     let elapsed = 0;
@@ -374,7 +379,7 @@ export class GradeProgramasService {
       duracao_real_sec += item.duracao_sec;
       counts[item.tipo] = (counts[item.tipo] ?? 0) + 1;
 
-      const content = item.content_id != null ? (contentMap.get(item.content_id) ?? null) : null;
+      const content = item.content_id != null ? (contentMap.get(Number(item.content_id)) ?? null) : null;
       const audioUrl: string | null = content
         ? ((content as Content & { mixed_audio_url?: string | null }).mixed_audio_url ?? content.audio_url ?? null)
         : null;
@@ -382,22 +387,24 @@ export class GradeProgramasService {
       return {
         id: item.id,
         ordem: item.ordem,
-        content_id: item.content_id ?? 0,
-        titulo: content?.titulo ?? `Item ${item.ordem}`,
+        content_id: item.content_id ?? null,
+        titulo: content?.titulo ?? null,
         tipo: item.tipo,
         duration_sec: item.duracao_sec,
         duracao_sec: item.duracao_sec,
         starts_at: startsAtIso,
         audio_url: audioUrl,
-        content: {
-          id: content?.id ?? 0,
-          titulo: content?.titulo ?? `Item ${item.ordem}`,
-          tipo: content?.tipo ?? item.tipo,
-          audio_url: audioUrl,
-          imagem_url:
-            (content as (Content & { imagem_url?: string | null }) | null)?.imagem_url ?? null,
-          duracao: content?.duracao ?? item.duracao_sec,
-        },
+        content: content
+          ? {
+              id: content.id,
+              titulo: content.titulo,
+              tipo: content.tipo,
+              audio_url: audioUrl,
+              imagem_url:
+                (content as Content & { imagem_url?: string | null }).imagem_url ?? null,
+              duracao: content.duracao,
+            }
+          : null,
       };
     });
 
@@ -488,6 +495,7 @@ export class GradeProgramasService {
             }
             logger.info("resolveDay: materialized to day_block_items", {
               channelId, date, grade_id: block.id, items: created.length,
+              duracao_total_sec: rows.reduce((acc, r) => acc + r.duracao_sec, 0),
             });
           } catch (err) {
             // Non-fatal: concurrent materializations can cause unique-key conflicts.
