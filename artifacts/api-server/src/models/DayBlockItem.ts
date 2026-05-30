@@ -79,18 +79,11 @@ export function initDayBlockItem(sequelize: Sequelize): void {
       modelName: "DayBlockItem",
       tableName: "day_block_items",
       timestamps: true,
-      indexes: [
-        // Lookup by date + channel — the primary query pattern
-        { fields: ["date", "channel_id"] },
-        // Lookup by specific block (used by resolveDay per-block check)
-        { fields: ["date", "channel_id", "grade_id"] },
-        // Unique: one entry per (date, channel, grade, position)
-        {
-          unique: true,
-          fields: ["date", "channel_id", "grade_id", "ordem"],
-          name: "day_block_items_unique",
-        },
-      ],
+      // Indexes are managed exclusively by migration 31/32 — do NOT define
+      // them here. Sequelize auto-sync does not manage indexes on existing
+      // tables (alter:true only touches columns), so duplicating them here
+      // would only create conflicting indexes on fresh databases via sync().
+      indexes: [],
     },
   );
 }

@@ -792,6 +792,7 @@ const migrations = [
 
   {
     name: "31-create-day-block-items",
+
     async up({ context: qi }: Ctx) {
       await sql(qi, `
         CREATE TABLE IF NOT EXISTS day_block_items (
@@ -836,6 +837,50 @@ const migrations = [
     },
     async down({ context: qi }: Ctx) {
       await qi.dropTable("day_block_items");
+    },
+  },
+
+  {
+    name: "32-fix-day-block-items-indexes",
+    // Migration 31 used CREATE TABLE IF NOT EXISTS + CREATE UNIQUE INDEX IF NOT EXISTS.
+    // On databases where the table already existed (created by Sequelize auto-sync
+    // before the migration ran), the IF NOT EXISTS clauses silently skipped creating
+    // the correct indexes, leaving behind:
+    //   • day_block_items_unique on (date, channel_id, grade_id, ordem)
+    //     — WRONG: without COALESCE(channel_id, 0), so NULL channel_id rows are
+    //       not properly covered by the unique constraint.
+    //   • day_block_items_date_channel_id / day_block_items_date_channel_id_grade_id
+    //     — DUPLICATE: Sequelize auto-created these; they are identical to the
+    //       migration-created day_block_items_date_channel / _date_channel_grade.
+    // This migration is fully idempotent — all DDL uses IF EXISTS / IF NOT EXISTS.
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        -- 1. Fix the unique index: drop the plain one (if it exists without COALESCE),
+        --    then recreate with COALESCE so NULL channel_id is handled correctly.
+        DROP INDEX IF EXISTS day_block_items_unique;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS day_block_items_unique
+          ON day_block_items (date, COALESCE(channel_id, 0), grade_id, ordem);
+
+        -- 2. Remove duplicate lookup indexes left by Sequelize auto-sync.
+        DROP INDEX IF EXISTS day_block_items_date_channel_id;
+        DROP INDEX IF EXISTS day_block_items_date_channel_id_grade_id;
+
+        -- 3. Ensure the canonical lookup indexes from migration 31 exist
+        --    (on a fresh DB they are created by 31, but safety-create here too).
+        CREATE INDEX IF NOT EXISTS day_block_items_date_channel
+          ON day_block_items (date, channel_id);
+
+        CREATE INDEX IF NOT EXISTS day_block_items_date_channel_grade
+          ON day_block_items (date, channel_id, grade_id);
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        DROP INDEX IF EXISTS day_block_items_unique;
+        CREATE UNIQUE INDEX IF NOT EXISTS day_block_items_unique
+          ON day_block_items (date, channel_id, grade_id, ordem);
+      `);
     },
   },
 ];

@@ -1,0 +1,158 @@
+Materialização de day_block_items
+Contexto
+Hoje o endpoint POST /grade-programas/resolve-day sorteia conteúdos em tempo real toda vez que é chamado e devolve a programação do dia. Isso tem dois problemas:
+
+Não é determinístico — cada chamada pode retornar resultado diferente (sorteio aleatório).
+Não é editável — o admin não consegue ajustar a programação de um dia específico (trocar uma música, remover uma vinheta, adicionar uma mensagem extra).
+Precisamos transformar a resolução em materialização persistente: a primeira chamada sorteia e salva no banco; chamadas seguintes leem do banco; o admin pode editar via novos endpoints.
+
+1. Nova tabela day_block_items
+CREATE TABLE day_block_items (
+  id            BIGSERIAL PRIMARY KEY,
+  date          DATE NOT NULL,
+  channel_id    BIGINT NULL REFERENCES channels(id) ON DELETE CASCADE,
+  grade_id      BIGINT NOT NULL REFERENCES grade_programas(id) ON DELETE CASCADE,
+  programa_id   BIGINT NOT NULL REFERENCES programas(id),
+  ordem         INTEGER NOT NULL,                 -- 0-based, ordem dentro do bloco
+  tipo          VARCHAR(40) NOT NULL,             -- 'musica', 'vinheta', 'mensagem', 'oracao', 'reflexao', 'versiculo', etc.
+  content_id    BIGINT NULL REFERENCES contents(id) ON DELETE SET NULL,
+  vinheta_id    BIGINT NULL,                      -- se vocês têm tabela separada de vinhetas; senão, ignorar
+  duracao_sec   INTEGER NOT NULL DEFAULT 0,
+  source        VARCHAR(20) NOT NULL DEFAULT 'auto',  -- 'auto' (sorteado) | 'manual' (editado pelo admin)
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX day_block_items_unique
+  ON day_block_items (date, COALESCE(channel_id, 0), grade_id, ordem);
+
+CREATE INDEX day_block_items_lookup
+  ON day_block_items (date, channel_id);
+Observação: se vinheta_id não fizer sentido no seu modelo (vinhetas são contents com tipo='vinheta'), descarte essa coluna e use só content_id.
+
+2. Modificar POST /grade-programas/resolve-day
+Request (igual ao atual):
+
+{ "date": "2026-05-30", "channel_id": 1 }
+Nova lógica:
+
+1. Buscar grades ativas do dia (mesma lógica atual: dias_semana ou data específica).
+2. Para cada bloco (grade_id), verificar se existem itens em day_block_items
+   para (date, channel_id, grade_id):
+   
+   a. SE EXISTEM → carrega itens do banco (ordenados por `ordem`) e devolve.
+   b. SE NÃO EXISTEM → roda o sorteio atual (sortear conteúdos por tipo
+      conforme a receita do programa), e INSERE em day_block_items com
+      source='auto'. Depois devolve o que foi inserido.
+
+3. Resposta mantém EXATAMENTE o mesmo formato atual (ResolvedDay com blocks[]
+   e items[]), só que agora cada item também carrega `id` (id do day_block_items)
+   e `ordem`.
+Response (formato atual + 2 campos novos por item):
+
+{
+  "date": "2026-05-30",
+  "channel_id": 1,
+  "blocks": [
+    {
+      "grade_id": 42,
+      "programa_id": 7,
+      "programa_nome": "Manhã com Deus",
+      "programa_bloco": "manha",
+      "horario_inicio": "07:00",
+      "horario_inicio_iso": "2026-05-30T07:00:00-03:00",
+      "horario_fim": "08:00",
+      "duracao_min": 60,
+      "duracao_real_sec": 3598,
+      "items": [
+        {
+          "id": 12345,                    // NOVO: id do day_block_items
+          "ordem": 0,                     // NOVO: posição no bloco
+          "starts_at": "2026-05-30T07:00:00-03:00",
+          "duration_sec": 30,
+          "duracao_sec": 30,
+          "tipo": "vinheta",
+          "content_id": "88",
+          "content": { "id": "88", "titulo": "Abertura Manhã", "audio_url": "...", "duracao": 30 }
+        }
+      ]
+    }
+  ]
+}
+3. Novo endpoint: GET /day-block-items
+Query: ?date=2026-05-30&channel_id=1 (opcionalmente &grade_id=42)
+
+Response:
+
+{
+  "items": [
+    {
+      "id": 12345,
+      "date": "2026-05-30",
+      "channel_id": 1,
+      "grade_id": 42,
+      "programa_id": 7,
+      "ordem": 0,
+      "tipo": "vinheta",
+      "content_id": 88,
+      "duracao_sec": 30,
+      "source": "auto",
+      "created_at": "...",
+      "updated_at": "..."
+    }
+  ]
+}
+Uso: o frontend pode usar pra checar se um dia já foi materializado, mas o principal continua sendo resolve-day.
+
+4. Novo endpoint: PUT /day-block-items/bulk (salvar edições)
+Substitui atomicamente todos os itens de um bloco específico (date + channel_id + grade_id).
+
+Request:
+
+{
+  "date": "2026-05-30",
+  "channel_id": 1,
+  "grade_id": 42,
+  "items": [
+    { "ordem": 0, "tipo": "vinheta",  "content_id": 88,  "duracao_sec": 30 },
+    { "ordem": 1, "tipo": "musica",   "content_id": 102, "duracao_sec": 240 },
+    { "ordem": 2, "tipo": "mensagem", "content_id": 555, "duracao_sec": 180 },
+    { "ordem": 3, "tipo": "musica",   "content_id": 117, "duracao_sec": 215 }
+  ]
+}
+Lógica (em transação):
+
+BEGIN;
+DELETE FROM day_block_items
+ WHERE date = $1 AND COALESCE(channel_id, 0) = COALESCE($2, 0) AND grade_id = $3;
+
+INSERT INTO day_block_items (date, channel_id, grade_id, programa_id, ordem, tipo, content_id, duracao_sec, source)
+SELECT ... FROM unnest(...);  -- todos com source='manual'
+COMMIT;
+programa_id deve ser inferido a partir do grade_id (lookup em grade_programas). Validações:
+
+content_id precisa existir em contents (ou ser null se o tipo permitir).
+tipo é livre — aceitar qualquer string (admin pode misturar tipos).
+duracao_sec >= 0.
+ordem deve ser único dentro da request (0, 1, 2, ...).
+Response: mesmo formato do GET, com os novos itens inseridos.
+
+5. Novo endpoint: DELETE /day-block-items
+Limpa a materialização de um dia inteiro (usado pelo botão "Regenerar dia" do admin).
+
+Query: ?date=2026-05-30&channel_id=1
+
+DELETE FROM day_block_items
+ WHERE date = $1 AND COALESCE(channel_id, 0) = COALESCE($2, 0);
+Response: { "deleted": 47 }
+
+Depois disso, próxima chamada de resolve-day re-sorteia e re-materializa do zero.
+
+6. Critérios de aceite
+ Primeira chamada de resolve-day para um dia novo cria registros em day_block_items (verificar via SELECT).
+ Segunda chamada do mesmo resolve-day retorna exatamente os mesmos itens (mesmos content_id, mesma ordem) — sem novo sorteio.
+ PUT /day-block-items/bulk substitui itens de um bloco e o próximo resolve-day reflete a edição.
+ DELETE /day-block-items limpa o dia; próximo resolve-day sorteia de novo.
+ Apagar uma grade (DELETE /grade-programas/:id) faz CASCADE nos day_block_items associados.
+ Constraint UNIQUE impede ordens duplicadas no mesmo bloco.
+ Tudo retrocompatível: clientes antigos que só chamam resolve-day continuam funcionando, só que agora com resultado determinístico após a primeira chamada.
