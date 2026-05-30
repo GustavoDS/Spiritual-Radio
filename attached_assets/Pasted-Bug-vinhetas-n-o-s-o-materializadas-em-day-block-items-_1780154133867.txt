@@ -1,0 +1,44 @@
+Bug: vinhetas não são materializadas em day_block_items
+Backend: api-radio.nexoprime.tec.br Endpoint afetado: POST /grade-programas/resolve-day (e o serviço de materialização chamado por ele e pelo botão "Regenerar dia")
+
+Sintoma
+Ao regenerar o dia 2026-05-30 para o canal 1:
+
+São criados 952 itens em day_block_items (música, oração, mensagem, versículo).
+Zero itens com tipo='vinheta' são inseridos, apesar de existirem 54 vinhetas ativas vinculadas ao canal 1 (vinhetas.ativo = true, audio_url preenchida).
+Consequência: GET /day-block-items?date=2026-05-30&channel_id=1 retorna a fila completa sem nenhuma vinheta, e o player nunca toca vinheta.
+Comportamento esperado
+Durante a materialização de cada bloco de programa (PlaylistMaterializationService / equivalente), o serviço deve:
+
+Carregar as vinhetas ativas do canal (vinhetas WHERE channel_id = :channel_id AND ativo = true AND audio_url IS NOT NULL).
+Para cada bloco materializado, inserir pelo menos 1 linha em day_block_items com:
+tipo = 'vinheta'
+vinheta_id = <id da vinheta escolhida>
+duracao_sec = vinheta.duracao_sec
+grade_id, programa_id, ordem, data corretos
+Critério de escolha sugerido (mesma lógica que o frontend usava como fallback):
+Prioridade por tipo_vinheta: abertura > transicao > antes_de_mensagem > antes_de_oracao > antes_de_versiculo > encerramento.
+Casar vinheta.bloco com programa.bloco (madrugada/manhã/tarde/noite); bloco='geral' é fallback.
+Desempate por prioridade DESC, depois id ASC.
+Respeitar as configurações do bloco (frequência configurada por programa, se houver) — mas garantir mínimo de 1 vinheta por bloco quando houver vinhetas ativas no canal.
+Como reproduzir
+# Login (admin)
+POST /auth/login  → pega token
+
+# Regenerar
+POST /grade-programas/resolve-day
+  { "date": "2026-05-30", "channel_id": 1, "force": true }
+
+# Conferir
+GET /day-block-items?date=2026-05-30&channel_id=1
+  → filtrar items.filter(i => i.tipo === 'vinheta')  → []   ❌
+
+# Confirmar que existem vinhetas ativas
+GET /vinhetas?channel_id=1
+  → 54 entradas com ativo=true e audio_url preenchida   ✅
+Critério de aceite
+Após force regenerate do dia 2026-05-30 no canal 1:
+
+GET /day-block-items?... retorna pelo menos N itens com tipo='vinheta' e vinheta_id não-nulo (N ≥ número de blocos materializados).
+Cada item de vinheta tem duracao_sec > 0 e referencia uma vinheta existente em vinhetas.
+Frontend (já pronto) passa a exibi-las no /admin/programacao?tab=fila sem nenhuma alteração adicional.

@@ -1,5 +1,5 @@
 import { Op } from "sequelize";
-import { Playlist, PlaylistItem, Channel, Content } from "../models/index.js";
+import { Playlist, PlaylistItem, Channel, Content, DayBlockItem } from "../models/index.js";
 import { gradeProgramasService } from "../modules/grade-programas/grade-programas.service.js";
 import { vinhetasService } from "../modules/vinhetas/vinhetas.service.js";
 import { backgroundTrackMixService } from "./BackgroundTrackMixService.js";
@@ -130,18 +130,23 @@ export class PlaylistMaterializationService {
       defaults: { channel_id: channelId, data: date } as Parameters<typeof Playlist.create>[0],
     });
 
-    // 2. Full rebuild — delete all existing items for this playlist.
+    // 2. Full rebuild — delete all existing items for this playlist AND
+    // day_block_items (the vinheta-aware schedule cache).
     // Signal AutoDJService BEFORE destroying rows so the watcher doesn't
     // misinterpret the empty-table window as a genuine "no_schedule" gap.
     autoDjService.setRematerializing(channelId, true);
     try {
       await PlaylistItem.destroy({ where: { playlist_id: playlist.id } });
+      // Also wipe the day_block_items cache so resolveDay() re-runs the
+      // cache-miss path and injects vinhetas fresh on every full rebuild.
+      await DayBlockItem.destroy({ where: { date, channel_id: channelId } });
     } catch (err) {
       autoDjService.setRematerializing(channelId, false);
       throw err;
     }
 
-    // 3. Resolve all grade_programas blocks (includes block metadata)
+    // 3. Resolve all grade_programas blocks (includes block metadata).
+    // force=false here because we already cleared day_block_items above.
     const dayResult = await gradeProgramasService.resolveDay(channelId, date);
 
     if (dayResult.total_blocks === 0 || dayResult.blocks.length === 0) {

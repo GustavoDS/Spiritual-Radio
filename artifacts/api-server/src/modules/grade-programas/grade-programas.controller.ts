@@ -69,6 +69,7 @@ export async function resolveDay(req: Request, res: Response): Promise<void> {
     ? body["date"]
     : new Date().toISOString().slice(0, 10);
 
-  const result = await gradeProgramasService.resolveDay(channelId, date);
+  const force = body["force"] === true;
+  const result = await gradeProgramasService.resolveDay(channelId, date, force);
   ok(res, result);
 }

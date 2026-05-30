@@ -487,7 +487,14 @@ export class GradeProgramasService {
    * Returns both a flat `items` list (backward-compat) and a `blocks` array
    * with per-block metadata needed by PlaylistMaterializationService.
    */
-  async resolveDay(channelId: number, date: string) {
+  async resolveDay(channelId: number, date: string, force = false) {
+    // When force=true, wipe every pre-materialized row for this day+channel so
+    // all blocks go through the cache-miss path and vinhetas are re-injected.
+    if (force) {
+      const deleted = await DayBlockItem.destroy({ where: { date, channel_id: channelId } });
+      logger.info("resolveDay: force-cleared day_block_items", { channelId, date, deleted });
+    }
+
     const effective = await this._getEffectiveBlocks(channelId, date);
 
     const allItems: unknown[] = [];
