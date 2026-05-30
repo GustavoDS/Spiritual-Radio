@@ -787,6 +787,57 @@ const migrations = [
       `);
     },
   },
+
+  // ── Day Block Items — materialização persistente de resolve-day ───────────
+
+  {
+    name: "31-create-day-block-items",
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        CREATE TABLE IF NOT EXISTS day_block_items (
+          id          BIGSERIAL   PRIMARY KEY,
+          date        DATE        NOT NULL,
+          channel_id  BIGINT      NULL REFERENCES channels(id)      ON DELETE CASCADE,
+          grade_id    BIGINT      NOT NULL REFERENCES grade_programas(id) ON DELETE CASCADE,
+          programa_id BIGINT      NOT NULL REFERENCES programas(id),
+          ordem       INTEGER     NOT NULL,
+          tipo        VARCHAR(40) NOT NULL,
+          content_id  BIGINT      NULL REFERENCES contents(id)      ON DELETE SET NULL,
+          duracao_sec INTEGER     NOT NULL DEFAULT 0,
+          source      VARCHAR(20) NOT NULL DEFAULT 'auto',
+          "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(),
+          "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now()
+        );
+
+        COMMENT ON TABLE  day_block_items IS
+          'Persistent materialisation of POST /grade-programas/resolve-day. '
+          'source=auto: lottery result; source=manual: admin edit.';
+        COMMENT ON COLUMN day_block_items.ordem IS
+          '0-based position of the item within its program block.';
+        COMMENT ON COLUMN day_block_items.source IS
+          'auto = written by the lottery on first resolve-day call; '
+          'manual = replaced via PUT /day-block-items/bulk by an admin.';
+
+        -- Primary lookup: all items for a given day + channel
+        CREATE INDEX IF NOT EXISTS day_block_items_date_channel
+          ON day_block_items (date, channel_id);
+
+        -- Per-block lookup used by resolveDay cache-check
+        CREATE INDEX IF NOT EXISTS day_block_items_date_channel_grade
+          ON day_block_items (date, channel_id, grade_id);
+
+        -- Unique position within a block.
+        -- COALESCE(channel_id, 0) is required because NULL != NULL in Postgres,
+        -- so a plain unique index on (date, channel_id, grade_id, ordem) would
+        -- allow duplicate (date, NULL, grade_id, ordem) rows.
+        CREATE UNIQUE INDEX IF NOT EXISTS day_block_items_unique
+          ON day_block_items (date, COALESCE(channel_id, 0), grade_id, ordem);
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await qi.dropTable("day_block_items");
+    },
+  },
 ];
 
 function umzugLog(level: "info" | "warn" | "error" | "debug", m: unknown): void {
