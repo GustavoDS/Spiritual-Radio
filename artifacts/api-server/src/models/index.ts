@@ -22,6 +22,7 @@ import { Vinheta, initVinheta } from "./Vinheta.js";
 import { VinhetaExecucao, initVinhetaExecucao } from "./VinhetaExecucao.js";
 import { ContentChannel, initContentChannel } from "./ContentChannel.js";
 import { VinhetaChannel, initVinhetaChannel } from "./VinhetaChannel.js";
+import { DayBlockItem, initDayBlockItem } from "./DayBlockItem.js";
 import { env } from "../config/env.js";
 import { logger } from "../lib/logger.js";
 
@@ -48,6 +49,7 @@ initVinheta(sequelize);
 initVinhetaExecucao(sequelize);
 initContentChannel(sequelize);
 initVinhetaChannel(sequelize);
+initDayBlockItem(sequelize);
 
 Content.belongsTo(Category, { foreignKey: "categoria_id", as: "categoria", onDelete: "SET NULL" });
 Category.hasMany(Content, { foreignKey: "categoria_id", as: "contents" });
@@ -138,8 +140,9 @@ export async function syncDatabase(force = false): Promise<void> {
     syncModel(MixedAudioCache, createOnly),
     syncModel(Vinheta, createOnly),
     syncModel(VinhetaExecucao, createOnly),
+    syncModel(DayBlockItem, createOnly),
   ]);
-  logger.info("syncDatabase: new tables ensured (background-tracks + vinhetas)");
+  logger.info("syncDatabase: new tables ensured (background-tracks + vinhetas + day_block_items)");
 }
 
 // BackgroundTrack FK on Content (optional, no cascade delete — track deletion clears cache manually)
@@ -165,6 +168,19 @@ Vinheta.hasMany(VinhetaExecucao, { foreignKey: "vinheta_id", as: "execucoes" });
 Vinheta.belongsTo(BackgroundTrack, { foreignKey: "background_track_id", as: "background_track", constraints: false });
 BackgroundTrack.hasMany(Vinheta, { foreignKey: "background_track_id", as: "vinhetas_com_bed", constraints: false });
 
+// DayBlockItem associations
+DayBlockItem.belongsTo(Channel, { foreignKey: "channel_id", as: "channel", onDelete: "CASCADE" });
+Channel.hasMany(DayBlockItem, { foreignKey: "channel_id", as: "dayBlockItems" });
+
+DayBlockItem.belongsTo(GradePrograma, { foreignKey: "grade_id", as: "grade", onDelete: "CASCADE" });
+GradePrograma.hasMany(DayBlockItem, { foreignKey: "grade_id", as: "dayBlockItems" });
+
+DayBlockItem.belongsTo(Programa, { foreignKey: "programa_id", as: "programa" });
+Programa.hasMany(DayBlockItem, { foreignKey: "programa_id", as: "dayBlockItems" });
+
+DayBlockItem.belongsTo(Content, { foreignKey: "content_id", as: "content", onDelete: "SET NULL" });
+Content.hasMany(DayBlockItem, { foreignKey: "content_id", as: "dayBlockItems" });
+
 export {
   sequelize,
   User, Channel, Category, Content, Voice,
@@ -175,4 +191,5 @@ export {
   Programa, GradePrograma, PlayHistory,
   BackgroundTrack, BackgroundTrackSettings, MixedAudioCache,
   Vinheta, VinhetaExecucao,
+  DayBlockItem,
 };

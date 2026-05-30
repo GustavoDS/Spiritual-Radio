@@ -16,11 +16,19 @@ export interface ResolvedItemContent {
 }
 
 export interface ResolvedItem {
+  /**
+   * DayBlockItem.id — set when the item was loaded from the persistent
+   * materialization cache (day_block_items table).  Undefined on the first
+   * resolve call before the row has been saved.
+   */
+  id?: number;
   ordem: number;
   content_id: number;
   titulo: string;
   tipo: string;
   duration_sec: number;
+  /** Alias for duration_sec — included for API backward compatibility. */
+  duracao_sec?: number;
   starts_at: string | null;
   /** Effective audio URL (prefers mixed_audio_url, falls back to audio_url). */
   audio_url: string | null;
