@@ -1,0 +1,44 @@
+materializar vinhetas em day_block_items
+Contexto
+Hoje o POST /grade-programas/resolve-day materializa apenas os slots de receita (música/oração/mensagem/reflexão/versículo) em day_block_items. As vinhetas continuam sendo injetadas em runtime pelo AutoDJ a partir da tabela vinhetas (por bloco/tipo/prioridade), o que impede o usuário de editar, remover ou adicionar vinhetas por dia no editor de bloco do admin.
+
+Precisamos que toda a fila do dia (incluindo vinhetas) seja persistida em day_block_items, mantendo o mesmo contrato já usado para os demais tipos.
+
+O que mudar
+1. resolve-day deve materializar as vinhetas
+Durante a resolução de cada bloco, aplicar a mesma lógica que o AutoDJ usa hoje em runtime e gravar as vinhetas como linhas em day_block_items:
+
+Abertura do bloco → 1 linha tipo: "vinheta" antes do primeiro item.
+Antes de oração / mensagem / versículo → 1 linha tipo: "vinheta" imediatamente antes de cada slot desses tipos (regra atual: antes_de_oracao, antes_de_mensagem, antes_de_versiculo).
+Encerramento do bloco → 1 linha tipo: "vinheta" após o último item.
+Cada linha de vinheta deve ter:
+
+tipo: "vinheta"
+content_id: id do conteúdo de áudio da vinheta escolhida (a tabela vinhetas já referencia um áudio — use esse content_id; se a vinheta não tiver um content espelhado em contents, criar/expor um content interno para que o LEFT JOIN contents no GET /day-block-items retorne audio_url/titulo normalmente)
+duracao_sec: duração real do áudio da vinheta
+source: "auto"
+ordem: contígua na sequência do bloco
+A escolha da vinheta segue a regra atual (maior prioridade entre as ativo=true para o bloco+tipo_vinheta, com fallback bloco="geral"). Se não houver candidata, não gravar linha (igual ao runtime de hoje).
+
+2. GET /day-block-items e PUT /bulk continuam iguais
+Já fazem LEFT JOIN contents (corrigido na última revisão). Vinhetas devem aparecer com titulo e audio_url preenchidos exatamente como qualquer outro item.
+
+3. PUT /day-block-items/bulk deve aceitar vinhetas
+O endpoint já aceita tipo arbitrário, então tecnicamente nada muda. Mas confirmar:
+
+Salvar uma vinheta com source: "manual" quando vier do editor.
+Re-resolver o dia não pode sobrescrever linhas source: "manual" (regra já combinada).
+4. Runtime do AutoDJ
+Como day_block_items passa a conter as vinhetas, o AutoDJ deve parar de injetar vinhetas em runtime quando estiver lendo de day_block_items materializado — senão duplica. Ler a fila exatamente como está gravada.
+
+O fallback antigo (injetar em runtime quando o dia não foi materializado) pode continuar existindo só para dias não resolvidos.
+
+5. Logs
+Atualizar o log de materialização para discriminar:
+
+resolveDay: materialized { items: 90, vinhetas: 24, duracao_total_sec: 7239 }
+Critério de aceite
+POST /grade-programas/resolve-day para um dia novo → GET /day-block-items retorna abertura + slots intercalados com vinhetas + encerramento, todos com titulo/audio_url.
+Editar um bloco no admin e remover uma vinheta via PUT /bulk → próxima leitura não retorna aquela vinheta, e o AutoDJ não a reinsere em runtime.
+Adicionar uma vinheta nova manualmente via PUT /bulk → persiste com source: "manual", sobrevive a re-resolves.
+AutoDJ tocando o dia materializado não duplica vinhetas.

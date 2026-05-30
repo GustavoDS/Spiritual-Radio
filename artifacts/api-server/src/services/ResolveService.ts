@@ -25,6 +25,8 @@ export interface ResolvedItem {
   ordem: number;
   /** null when the slot has no associated content (e.g. a manual placeholder). */
   content_id: number | null;
+  /** Set when tipo='vinheta' — references vinhetas.id. */
+  vinheta_id?: number | null;
   /** null when content_id is null or the content record has been deleted. */
   titulo: string | null;
   tipo: string;

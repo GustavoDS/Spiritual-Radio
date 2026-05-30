@@ -1,2 +1,3 @@
 - [Stream orchestrator bugs (May 2026)](stream-orchestrator-bugs.md) — 3 bugs fixed in AutoDJService/ResolveService/PlaylistMaterializationService
 - [Dev DB is nearly empty](dev-db-state.md) — content library has only musica (no audio) + pregacao; bugs must be verified in prod
+- [Vinheta materialization in day_block_items](vinheta-materialization.md) — vinhetas now stored at resolve-day (not at AutoDJ runtime) to enable admin editing via PUT /bulk.

@@ -7,8 +7,9 @@ import { Model, DataTypes, type Sequelize } from "sequelize";
  * (ResolveService) and stores the result here.  Subsequent calls read from
  * this table, making the day's content list deterministic and editable by admins.
  *
- * Vinhetas are NOT stored here — they are injected by PlaylistMaterializationService
- * from the `vinhetas` table at playlist-build time.
+ * Vinheta slots (abertura, antes_de_X, encerramento) are also stored here with
+ * tipo='vinheta', content_id=null, vinheta_id=<vinhetas.id>.  This makes the
+ * full block sequence editable — admins can remove or swap individual vinhetas.
  */
 export class DayBlockItem extends Model {
   declare id: number;
@@ -21,10 +22,12 @@ export class DayBlockItem extends Model {
   declare programa_id: number;
   /** 0-based position within the block */
   declare ordem: number;
-  /** Content type: musica, oracao, mensagem, reflexao, versiculo, … */
+  /** Content type: musica, oracao, mensagem, reflexao, versiculo, vinheta, … */
   declare tipo: string;
-  /** FK → contents.id (SET NULL on content deletion) */
+  /** FK → contents.id (SET NULL on content deletion). Null for vinheta slots. */
   declare content_id: number | null;
+  /** FK → vinhetas.id (SET NULL on vinheta deletion). Only set when tipo='vinheta'. */
+  declare vinheta_id: number | null;
   declare duracao_sec: number;
   /** 'auto' = lottery result; 'manual' = admin edit */
   declare source: "auto" | "manual";
@@ -65,6 +68,12 @@ export function initDayBlockItem(sequelize: Sequelize): void {
         allowNull: true,
         references: { model: "contents", key: "id" },
         onDelete: "SET NULL",
+      },
+      vinheta_id: {
+        type: DataTypes.INTEGER,
+        allowNull: true,
+        defaultValue: null,
+        comment: "FK → vinhetas.id. Only populated for tipo='vinheta' rows.",
       },
       duracao_sec: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
       source: {

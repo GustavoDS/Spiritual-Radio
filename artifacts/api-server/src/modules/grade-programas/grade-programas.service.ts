@@ -1,8 +1,9 @@
 import { Op } from "sequelize";
-import { sequelize, GradePrograma, Programa, Channel, Content, DayBlockItem } from "../../models/index.js";
+import { sequelize, GradePrograma, Programa, Channel, Content, DayBlockItem, Vinheta } from "../../models/index.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
 import { resolveService } from "../../services/ResolveService.js";
 import type { ResolvedItem } from "../../services/ResolveService.js";
+import { vinhetasService } from "../vinhetas/vinhetas.service.js";
 import { logger } from "../../lib/logger.js";
 
 /* ─── Types ──────────────────────────────────────────────────────────────── */
@@ -74,6 +75,27 @@ export interface PublicScheduleItem {
 
 function normaliseTime(t: string): string {
   return t.length === 5 ? `${t}:00` : t;
+}
+
+/** Maps "HH:MM:SS" → BlocoVinheta name (mirrors PlaylistMaterializationService). */
+function blocoFromHoraStr(horaStr: string): string {
+  const h = parseInt(horaStr.split(":")[0] ?? "0", 10);
+  if (h < 5)  return "madrugada";
+  if (h < 7)  return "amanhecer";
+  if (h < 12) return "manha";
+  if (h < 14) return "almoco";
+  if (h < 18) return "tarde";
+  if (h < 21) return "prime";
+  if (h < 23) return "noite";
+  return "sleep";
+}
+
+/** Maps content.tipo → the "antes_de_X" vinheta tipo, or null if not applicable. */
+function beforeTipoVinheta(contentTipo: string): string | null {
+  if (contentTipo === "oracao") return "antes_de_oracao";
+  if (["mensagem", "pregacao", "devocional", "reflexao"].includes(contentTipo)) return "antes_de_mensagem";
+  if (contentTipo === "versiculo") return "antes_de_versiculo";
+  return null;
 }
 
 /**
@@ -350,12 +372,12 @@ export class GradeProgramasService {
     prog: Programa,
     date: string,
   ): Promise<ResolveDayBlock> {
+    // Batch-load content records
     const contentIds = [
       ...new Set(
         items.map((i) => i.content_id).filter((id): id is number => id != null).map(Number),
       ),
     ];
-
     const contentsRaw =
       contentIds.length > 0
         ? await Content.findAll({
@@ -368,6 +390,24 @@ export class GradeProgramasService {
     // sides to guarantee Map.get() hits regardless of which type Sequelize chose.
     const contentMap = new Map(contentsRaw.map((c) => [Number(c.id), c]));
 
+    // Batch-load vinheta records (for tipo='vinheta' rows)
+    const vinhetaIds = [
+      ...new Set(
+        items
+          .map((i) => (i as InstanceType<typeof DayBlockItem> & { vinheta_id?: number | null }).vinheta_id)
+          .filter((id): id is number => id != null)
+          .map(Number),
+      ),
+    ];
+    const vinhetasRaw =
+      vinhetaIds.length > 0
+        ? await Vinheta.findAll({
+            where: { id: { [Op.in]: vinhetaIds } },
+            attributes: ["id", "nome", "audio_url", "duracao_sec"],
+          })
+        : [];
+    const vinhetaMap = new Map(vinhetasRaw.map((v) => [Number(v.id), v]));
+
     const blockStartMs = new Date(`${date}T${normaliseTime(block.horario_inicio)}Z`).getTime();
     let elapsed = 0;
     let duracao_real_sec = 0;
@@ -379,16 +419,23 @@ export class GradeProgramasService {
       duracao_real_sec += item.duracao_sec;
       counts[item.tipo] = (counts[item.tipo] ?? 0) + 1;
 
+      const itemVinhetaId = (item as InstanceType<typeof DayBlockItem> & { vinheta_id?: number | null }).vinheta_id;
       const content = item.content_id != null ? (contentMap.get(Number(item.content_id)) ?? null) : null;
+      const vinheta = itemVinhetaId != null ? (vinhetaMap.get(Number(itemVinhetaId)) ?? null) : null;
+
+      // Audio URL priority: content mixed > content raw > vinheta audio > null
       const audioUrl: string | null = content
         ? ((content as Content & { mixed_audio_url?: string | null }).mixed_audio_url ?? content.audio_url ?? null)
-        : null;
+        : (vinheta?.audio_url ?? null);
+
+      const titulo: string | null = content?.titulo ?? vinheta?.nome ?? null;
 
       return {
         id: item.id,
         ordem: item.ordem,
         content_id: item.content_id ?? null,
-        titulo: content?.titulo ?? null,
+        vinheta_id: itemVinhetaId ?? null,
+        titulo,
         tipo: item.tipo,
         duration_sec: item.duracao_sec,
         duracao_sec: item.duracao_sec,
@@ -468,38 +515,114 @@ export class GradeProgramasService {
         // ── 2. Cache miss — run the lottery ────────────────────────────
         const resolved = await resolveService.resolve(prog.id, channelId, date, startsAt);
 
-        // ── 3. Persist to day_block_items ─────────────────────────────
-        if (resolved.items.length > 0) {
-          const rows = resolved.items.map((item, idx) => ({
+        // ── 3. Persist to day_block_items with vinheta injection ───────
+        //
+        // Build the row list interleaved with:
+        //   • abertura vinheta at block start
+        //   • antes_de_X before oração/mensagem/versículo/etc
+        //   • encerramento vinheta at block end
+        //
+        // This makes the full sequence editable by admins (PUT /bulk).
+        // Batch-load usa_vinheta_automatica to respect per-content overrides.
+
+        const bloco = blocoFromHoraStr(normaliseTime(block.horario_inicio));
+
+        const allContentIds = [...new Set(
+          resolved.items.map((i) => i.content_id).filter((id): id is number => id != null),
+        )];
+        const contentMetaRaw = allContentIds.length > 0
+          ? await Content.findAll({
+              where: { id: { [Op.in]: allContentIds } },
+              attributes: ["id", "usa_vinheta_automatica"],
+            })
+          : [];
+        const usaVinhetaMap = new Map(
+          contentMetaRaw.map((c) => [
+            Number(c.id),
+            (c as Content & { usa_vinheta_automatica?: boolean }).usa_vinheta_automatica ?? true,
+          ]),
+        );
+
+        type DayRow = {
+          date: string;
+          channel_id: number | null;
+          grade_id: number;
+          programa_id: number;
+          ordem: number;
+          tipo: string;
+          content_id: number | null;
+          vinheta_id: number | null;
+          duracao_sec: number;
+          source: "auto";
+        };
+
+        const rows: DayRow[] = [];
+        let ordem = 0;
+
+        const tryPushVinheta = async (tipoV: string): Promise<void> => {
+          const v = await vinhetasService.pickVinheta(channelId, bloco, tipoV).catch(() => null);
+          if (!v?.audio_url) return;
+          rows.push({
             date,
             channel_id: channelId,
             grade_id: block.id,
             programa_id: prog.id,
-            ordem: idx,
-            tipo: item.tipo,
-            content_id: item.content_id || null,
-            duracao_sec: item.duration_sec,
-            source: "auto" as const,
-          }));
+            ordem: ordem++,
+            tipo: "vinheta",
+            content_id: null,
+            vinheta_id: v.id,
+            duracao_sec: v.duracao_sec ?? 30,
+            source: "auto",
+          });
+        };
 
+        // Abertura
+        await tryPushVinheta("abertura");
+
+        // Content items with antes_de_X
+        for (const item of resolved.items) {
+          const usaVinheta = item.content_id != null
+            ? (usaVinhetaMap.get(item.content_id) ?? true)
+            : false;
+
+          if (usaVinheta && item.tipo !== "musica") {
+            const tipoV = beforeTipoVinheta(item.tipo);
+            if (tipoV) await tryPushVinheta(tipoV);
+          }
+
+          rows.push({
+            date,
+            channel_id: channelId,
+            grade_id: block.id,
+            programa_id: prog.id,
+            ordem: ordem++,
+            tipo: item.tipo,
+            content_id: item.content_id ?? null,
+            vinheta_id: null,
+            duracao_sec: item.duration_sec,
+            source: "auto",
+          });
+        }
+
+        // Encerramento
+        await tryPushVinheta("encerramento");
+
+        let created: InstanceType<typeof DayBlockItem>[] = [];
+        if (rows.length > 0) {
           try {
-            const created = await DayBlockItem.bulkCreate(
+            created = await DayBlockItem.bulkCreate(
               rows as Parameters<typeof DayBlockItem.bulkCreate>[0],
               { returning: true },
-            );
-            // Attach DB ids and duracao_sec alias back to the in-memory items
-            for (let i = 0; i < resolved.items.length; i++) {
-              const item = resolved.items[i]!;
-              item.id = created[i]?.id as number | undefined;
-              item.duracao_sec = item.duration_sec;
-            }
+            ) as InstanceType<typeof DayBlockItem>[];
             logger.info("resolveDay: materialized to day_block_items", {
-              channelId, date, grade_id: block.id, items: created.length,
+              channelId, date, grade_id: block.id,
+              items: created.length,
+              vinhetas: rows.filter((r) => r.tipo === "vinheta").length,
               duracao_total_sec: rows.reduce((acc, r) => acc + r.duracao_sec, 0),
             });
           } catch (err) {
             // Non-fatal: concurrent materializations can cause unique-key conflicts.
-            // Log and continue — the caller still gets the resolved items.
+            // Fall back to the pure-lottery result (no vinhetas in response).
             logger.warn("resolveDay: bulkCreate day_block_items failed (race?)", {
               channelId, date, grade_id: block.id,
               err: (err as Error).message,
@@ -507,22 +630,29 @@ export class GradeProgramasService {
           }
         }
 
-        const duracaoEsperadaSec = prog.duracao_min * 60;
-        blockResult = {
-          grade_id: block.id,
-          programa_id: prog.id,
-          programa_nome: prog.nome,
-          programa_bloco: prog.bloco,
-          horario_inicio: normaliseTime(block.horario_inicio),
-          horario_inicio_iso: startsAt,
-          horario_fim: addMinutesToTime(normaliseTime(block.horario_inicio), prog.duracao_min),
-          duracao_min: prog.duracao_min,
-          duracao_real_sec: resolved.duracao_real_sec,
-          under_filled: resolved.duracao_real_sec < duracaoEsperadaSec * 0.9,
-          counts: resolved.counts,
-          pool_warnings: resolved.pool_warnings,
-          items: resolved.items,
-        };
+        if (created.length > 0) {
+          // Use _buildBlockFromDayBlockItems so the response includes vinheta data
+          // and is identical in shape to a cache-hit response.
+          blockResult = await this._buildBlockFromDayBlockItems(created, block, prog, date);
+        } else {
+          // Fallback: build from resolved items without vinhetas
+          const duracaoEsperadaSec = prog.duracao_min * 60;
+          blockResult = {
+            grade_id: block.id,
+            programa_id: prog.id,
+            programa_nome: prog.nome,
+            programa_bloco: prog.bloco,
+            horario_inicio: normaliseTime(block.horario_inicio),
+            horario_inicio_iso: startsAt,
+            horario_fim: addMinutesToTime(normaliseTime(block.horario_inicio), prog.duracao_min),
+            duracao_min: prog.duracao_min,
+            duracao_real_sec: resolved.duracao_real_sec,
+            under_filled: resolved.duracao_real_sec < duracaoEsperadaSec * 0.9,
+            counts: resolved.counts,
+            pool_warnings: resolved.pool_warnings,
+            items: resolved.items,
+          };
+        }
       }
 
       allItems.push(

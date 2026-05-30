@@ -181,6 +181,9 @@ Programa.hasMany(DayBlockItem, { foreignKey: "programa_id", as: "dayBlockItems" 
 DayBlockItem.belongsTo(Content, { foreignKey: "content_id", as: "content", onDelete: "SET NULL" });
 Content.hasMany(DayBlockItem, { foreignKey: "content_id", as: "dayBlockItems" });
 
+DayBlockItem.belongsTo(Vinheta, { foreignKey: "vinheta_id", as: "vinheta", constraints: false });
+Vinheta.hasMany(DayBlockItem, { foreignKey: "vinheta_id", as: "vinhetaDayBlockItems" });
+
 export {
   sequelize,
   User, Channel, Category, Content, Voice,

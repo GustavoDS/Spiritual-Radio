@@ -2,27 +2,37 @@ import type { Request, Response } from "express";
 import { Op } from "sequelize";
 import { ok } from "../../utils/response.js";
 import { HttpError } from "../../middlewares/errorHandler.js";
-import { DayBlockItem, GradePrograma, Content, sequelize } from "../../models/index.js";
+import { DayBlockItem, GradePrograma, Content, Vinheta, sequelize } from "../../models/index.js";
 
 /* ─── Serializer ────────────────────────────────────────────────────────── */
 
 type RawDayBlockItem = InstanceType<typeof DayBlockItem> & {
   content?: InstanceType<typeof Content> | null;
+  vinheta?: InstanceType<typeof Vinheta> | null;
 };
 
 /**
- * Serializes a DayBlockItem (with its eagerly-loaded `content` association)
- * into the shape the frontend expects.  When content_id is null or the join
- * returns nothing, `titulo`, `audio_url`, and `content` are all null — never
- * synthetic placeholders like "Item 0" or `{ id: 0 }`.
+ * Serializes a DayBlockItem (with eagerly-loaded `content` and `vinheta`
+ * associations) into the shape the frontend expects.
+ *
+ * Priority for audio/titulo:
+ *   1. Content record (when content_id is set)
+ *   2. Vinheta record (when vinheta_id is set — tipo='vinheta' slots)
+ *   3. null (manual placeholder with no audio yet)
+ *
+ * Never returns synthetic fallbacks like "Item 0" or `{ id: 0 }`.
  */
 function serializeItem(item: RawDayBlockItem) {
   const c = item.content ?? null;
+  const v = item.vinheta ?? null;
+
   const audioUrl: string | null = c
     ? ((c as InstanceType<typeof Content> & { mixed_audio_url?: string | null }).mixed_audio_url
         ?? c.audio_url
         ?? null)
-    : null;
+    : (v?.audio_url ?? null);
+
+  const titulo: string | null = c?.titulo ?? v?.nome ?? null;
 
   return {
     id: item.id,
@@ -35,7 +45,8 @@ function serializeItem(item: RawDayBlockItem) {
     duracao_sec: item.duracao_sec,
     source: item.source,
     content_id: item.content_id ?? null,
-    titulo: c?.titulo ?? null,
+    vinheta_id: item.vinheta_id ?? null,
+    titulo,
     audio_url: audioUrl,
     content: c
       ? {
@@ -52,11 +63,14 @@ function serializeItem(item: RawDayBlockItem) {
   };
 }
 
-/** Loads DayBlockItem rows with their Content join and serializes each one. */
+/** Loads DayBlockItem rows with Content + Vinheta joins and serializes each one. */
 async function loadEnriched(where: Record<string, unknown>) {
   const rows = await DayBlockItem.findAll({
     where,
-    include: [{ model: Content, as: "content", required: false }],
+    include: [
+      { model: Content, as: "content", required: false },
+      { model: Vinheta, as: "vinheta", required: false },
+    ],
     order: [
       ["grade_id", "ASC"],
       ["ordem", "ASC"],
@@ -71,7 +85,7 @@ async function loadEnriched(where: Record<string, unknown>) {
  * @swagger
  * /day-block-items:
  *   get:
- *     summary: Lista itens materializados de um dia (com dados de content)
+ *     summary: Lista itens materializados de um dia (com dados de content e vinheta)
  *     tags: [Day Block Items]
  *     security: [{ bearerAuth: [] }]
  *     parameters:
@@ -89,7 +103,7 @@ async function loadEnriched(where: Record<string, unknown>) {
  *         description: Filtrar por bloco específico
  *     responses:
  *       200:
- *         description: Itens do dia com titulo, audio_url e content expandidos
+ *         description: Itens do dia com titulo, audio_url, content e vinheta expandidos
  */
 export async function getItems(req: Request, res: Response): Promise<void> {
   const date = req.query["date"] as string | undefined;
@@ -116,6 +130,7 @@ interface BulkItemInput {
   ordem: number;
   tipo: string;
   content_id?: number | null;
+  vinheta_id?: number | null;
   duracao_sec: number;
 }
 
@@ -146,10 +161,11 @@ interface BulkItemInput {
  *                     ordem: { type: integer }
  *                     tipo: { type: string }
  *                     content_id: { type: integer, nullable: true }
+ *                     vinheta_id: { type: integer, nullable: true }
  *                     duracao_sec: { type: integer, minimum: 0 }
  *     responses:
  *       200:
- *         description: Itens do bloco substituídos (com titulo, audio_url e content expandidos)
+ *         description: Itens do bloco substituídos (com titulo, audio_url e content/vinheta expandidos)
  *       400:
  *         description: Validação falhou
  *       404:
@@ -162,7 +178,6 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
   const gradeId = body["grade_id"] !== undefined ? Number(body["grade_id"]) : NaN;
   const items = body["items"];
 
-  // ── Basic validation
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
     throw new HttpError("date é obrigatório no formato YYYY-MM-DD", 400);
   }
@@ -178,7 +193,6 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
 
   const typedItems = items as BulkItemInput[];
 
-  // ── Validate each item
   for (const [i, item] of typedItems.entries()) {
     if (typeof item.ordem !== "number" || !Number.isInteger(item.ordem) || item.ordem < 0) {
       throw new HttpError(`items[${i}].ordem deve ser inteiro >= 0`, 400);
@@ -191,13 +205,12 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
     }
   }
 
-  // ── ordens must be unique within the request
   const ordens = typedItems.map((i) => i.ordem);
   if (new Set(ordens).size !== ordens.length) {
     throw new HttpError("Valores de ordem duplicados na lista de itens", 400);
   }
 
-  // ── Validate content_ids exist in contents
+  // Validate content_ids
   const contentIds = [
     ...new Set(
       typedItems.map((i) => i.content_id).filter((id): id is number => id != null && id > 0),
@@ -212,12 +225,25 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
     }
   }
 
-  // ── Resolve programa_id from grade_id
+  // Validate vinheta_ids
+  const vinhetaIds = [
+    ...new Set(
+      typedItems.map((i) => i.vinheta_id).filter((id): id is number => id != null && id > 0),
+    ),
+  ];
+  if (vinhetaIds.length > 0) {
+    const found = await Vinheta.findAll({ where: { id: { [Op.in]: vinhetaIds } }, attributes: ["id"] });
+    if (found.length !== vinhetaIds.length) {
+      const foundIds = new Set(found.map((v) => v.id));
+      const missing = vinhetaIds.filter((id) => !foundIds.has(id));
+      throw new HttpError(`vinheta_id(s) não encontrados: ${missing.join(", ")}`, 400);
+    }
+  }
+
   const grade = await GradePrograma.findByPk(gradeId);
   if (!grade) throw new HttpError(`grade_id ${gradeId} não encontrado`, 404);
   const programaId = grade.programa_id;
 
-  // ── Atomic replace (DELETE + INSERT in transaction)
   await sequelize.transaction(async () => {
     await DayBlockItem.destroy({
       where: { date, channel_id: channelId, grade_id: gradeId },
@@ -231,6 +257,7 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
         ordem: item.ordem,
         tipo: item.tipo,
         content_id: item.content_id ?? null,
+        vinheta_id: item.vinheta_id ?? null,
         duracao_sec: item.duracao_sec,
         source: "manual" as const,
       })) as Parameters<typeof DayBlockItem.bulkCreate>[0],
@@ -238,7 +265,6 @@ export async function bulkUpdate(req: Request, res: Response): Promise<void> {
     );
   });
 
-  // ── Reload with Content JOIN so the response mirrors GET /day-block-items
   const enriched = await loadEnriched({ date, channel_id: channelId, grade_id: gradeId });
   ok(res, { items: enriched, count: enriched.length, date, channel_id: channelId, grade_id: gradeId });
 }

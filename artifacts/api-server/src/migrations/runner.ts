@@ -841,6 +841,28 @@ const migrations = [
   },
 
   {
+    name: "33-day-block-items-add-vinheta-id",
+    // Adds vinheta_id FK so vinheta slots can be stored directly in day_block_items,
+    // enabling full per-day editing of the vinheta sequence by admins.
+    async up({ context: qi }: Ctx) {
+      await sql(qi, `
+        ALTER TABLE day_block_items
+          ADD COLUMN IF NOT EXISTS vinheta_id INTEGER NULL
+            REFERENCES vinhetas(id) ON DELETE SET NULL;
+
+        CREATE INDEX IF NOT EXISTS day_block_items_vinheta_id
+          ON day_block_items (vinheta_id) WHERE vinheta_id IS NOT NULL;
+      `);
+    },
+    async down({ context: qi }: Ctx) {
+      await sql(qi, `
+        DROP INDEX IF EXISTS day_block_items_vinheta_id;
+        ALTER TABLE day_block_items DROP COLUMN IF EXISTS vinheta_id;
+      `);
+    },
+  },
+
+  {
     name: "32-fix-day-block-items-indexes",
     // Migration 31 used CREATE TABLE IF NOT EXISTS + CREATE UNIQUE INDEX IF NOT EXISTS.
     // On databases where the table already existed (created by Sequelize auto-sync

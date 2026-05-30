@@ -187,6 +187,77 @@ export class PlaylistMaterializationService {
         elapsed += dur;
       };
 
+      // Detect whether vinhetas were already materialized in day_block_items.
+      // When they are, skip runtime injection to avoid duplicates and push
+      // vinheta items directly from the pre-stored data.
+      const blockHasVinhetas = block.items.some((i) => i.tipo === "vinheta");
+
+      if (blockHasVinhetas) {
+        // ── Pre-materialized path: push items exactly as stored ──────────
+        // Vinheta slots carry audio_url/titulo from the vinheta record (resolved
+        // in _buildBlockFromDayBlockItems). Content slots use content_id.
+        for (const item of block.items) {
+          if (item.tipo === "vinheta") {
+            if (!item.audio_url) continue; // skip vinhetas without audio yet
+            const dur = item.duration_sec > 0 ? item.duration_sec : 30;
+            rows.push({
+              playlist_id: playlist.id,
+              content_id: null,
+              ordem: ordem++,
+              hora_execucao: isoToHora(addSecsToIso(block.horario_inicio_iso, elapsed)),
+              vinheta_url: item.audio_url,
+              vinheta_duracao: dur,
+              vinheta_titulo: item.titulo ?? "Vinheta",
+            });
+            elapsed += dur;
+          } else {
+            const dur = item.duration_sec > 0 ? item.duration_sec : 300;
+            rows.push({
+              playlist_id: playlist.id,
+              content_id: item.content_id,
+              ordem: ordem++,
+              hora_execucao: isoToHora(addSecsToIso(block.horario_inicio_iso, elapsed)),
+            });
+            elapsed += dur;
+          }
+        }
+
+        // Loop fill using content-only items (no duplicate vinheta injection)
+        const contentItems = block.items.filter((i) => i.tipo !== "vinheta");
+        const blockDurationSec = block.duracao_min * 60;
+        let loopCount = 0;
+        let loopPass = 0;
+        let loopTape = contentItems.length > 0 ? [...contentItems] : [];
+        while (elapsed < blockDurationSec - 30 && loopCount < MAX_LOOP && loopTape.length > 0) {
+          const idxInPass = loopCount % loopTape.length;
+          if (idxInPass === 0 && loopCount > 0) {
+            loopPass++;
+            loopTape = shuffleLoop(contentItems, `${block.grade_id}-pass${loopPass}`);
+          }
+          const template = loopTape[idxInPass]!;
+          const durSec = template.duration_sec > 0 ? template.duration_sec : 300;
+          rows.push({
+            playlist_id: playlist.id,
+            content_id: template.content_id,
+            ordem: ordem++,
+            hora_execucao: isoToHora(addSecsToIso(block.horario_inicio_iso, elapsed)),
+          });
+          elapsed += durSec;
+          loopCount++;
+        }
+
+        if (loopCount > 0) {
+          logger.debug("PlaylistMaterializationService: looped content to fill block (pre-materialized)", {
+            channelId, grade_id: block.grade_id, programa: block.programa_nome,
+            original_items: block.items.length, looped_items: loopCount,
+            duracao_min: block.duracao_min,
+          });
+        }
+        continue;
+      }
+
+      // ── Runtime injection path (no pre-materialized vinhetas) ──────────
+
       // 5a. Block abertura
       await pushVinheta("abertura");
 
