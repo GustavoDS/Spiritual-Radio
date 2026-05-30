@@ -137,9 +137,11 @@ export class PlaylistMaterializationService {
     autoDjService.setRematerializing(channelId, true);
     try {
       await PlaylistItem.destroy({ where: { playlist_id: playlist.id } });
-      // Also wipe the day_block_items cache so resolveDay() re-runs the
-      // cache-miss path and injects vinhetas fresh on every full rebuild.
-      await DayBlockItem.destroy({ where: { date, channel_id: channelId } });
+      // Wipe only auto-generated day_block_items so resolveDay() re-runs the
+      // cache-miss path and re-injects vinhetas.  Rows with source='manual'
+      // (admin edits via PUT /day-block-items/bulk) are intentionally preserved:
+      // resolveDay() will find them via cache-hit and honour the manual sequence.
+      await DayBlockItem.destroy({ where: { date, channel_id: channelId, source: "auto" } });
     } catch (err) {
       autoDjService.setRematerializing(channelId, false);
       throw err;
